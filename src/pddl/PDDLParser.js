@@ -2,6 +2,7 @@ import fs from 'fs';
 import { PddlProblem, Beliefset, onlineSolver } from '@unitn-asa/pddl-client';
 
 const BeliefSet = new Beliefset();
+var domain, mapObj, beliefMap;
 
 async function readDomain() {
     domain = await new Promise((resolve, reject) => {
@@ -14,45 +15,76 @@ async function readDomain() {
     });
 }
 
-function MapInfoParser() {
-    //TO DO
-}
+// function MapInfoParser() {
+//     for (const a of BeliefSet.objects) {
+//         mapObj += a + ' ';
+//     }
+//     mapObj += '- tile';
+// }
+
 function mapParser() {
-    //TO DO
+    //TO DO parse the map and add it to the beliefSet
+    // understanding if the tile is a wall or not and if it is a delivery tile
 }
-function parcelParser() {
-    //TO DO
+function parcelParser(parcels, me, beliefsSet) {
+    //parse the parcels and add them to the beliefSet
+    for (const parcel of parcels) {
+        if (parcel.carriedBy == me.id) {
+            BeliefSet.declare(
+                'carriedBy parcel_' +
+                    parcel.id +
+                    ' agent_' +
+                    parcel.carriedBy.id
+            );
+        } else if (parcel.carriedBy == null) {
+            BeliefSet.declare(
+                'at parcel_' + parcel.id + ' tile_' + parcel.x + '-' + parcel.y
+            );
+        }
+    }
 }
-function agentParser() {
-    //TO DO
+function agentParser(agents, beliefsSet) {
+    //parse the agents and add them to the beliefSet
+    for (const agent of agents) {
+        BeliefSet.declare(
+            'at agent_' + agent.id + ' tile_' + agent.x + '-' + agent.y
+        );
+    }
 }
+
 function goalParser() {
     //TO DO
 }
 function beliefParser() {
     //TO DO
 }
-function planParser() {
-    //TO DO
+// Parse the plan to get the actions creating an array of actions
+function planParser(plan) {
+    var actions = [];
+    for (const a of plan) {
+        actions.push(a.action);
+    }
+    return actions;
 }
 
-async function planner(parcels, agents, map, goal, you) {
+async function planner(parcels, agents, map, goal, me) {
     let beliefs = new Beliefset(); //Set the beliefSet and parse the dynamic objects
-    parcelParser(parcels, you, beliefs); //Declare the parcels in the beliefSet
-    // in parcelParser dichiaro anche you per dichiarare se è portato o meno (?)
+    parcelParser(parcels, me, beliefs); //Declare the parcels in the beliefSet
+    // in parcelParser dichiaro anche me per dichiarare se è portato o meno (?)
     agentParser(agents, beliefs); //Declare the agents in the beliefSet
-    beliefs.declare('at me_' + you.id + ' c_' + you.x + '_' + you.y); //Add the agent position to the beliefSet
+    beliefs.declare('at me_' + you.id + ' tile_' + you.x + '-' + you.y); //Add the agent position to the beliefSet
 
-    //Create the PDDL problem
-    let pddlProblem = new PddlProblem();
-    //TO DO
-
-    // see lab5\3beliefset.js !!!!
+    //Create the PDDL problem (adapted from lab5)
+    let pddlProblem = new PddlProblem(
+        'agent',
+        mapInfo + '\n' + beliefParser(beliefs),
+        goal //to parse in the call, before calling the planner
+    );
 
     //Parse the problem
-    let problem = await pddlProblem.parse();
+    let problem = pddlProblem.toPddlString();
     //Solve the problem
-    let plan = await onlineSolver(domain, problem);
+    var plan = await onlineSolver(domain, problem);
 
     // check if the plan is valid
     if (plan.length === 0) {
@@ -63,14 +95,4 @@ async function planner(parcels, agents, map, goal, you) {
     return planParser(plan);
 }
 
-export {
-    planner,
-    mapParser,
-    MapInfoParser,
-    goalParser,
-    beliefParser,
-    planParser,
-    agentParser,
-    parcelParser,
-    readDomain,
-};
+export { planner, mapParser, goalParser, readDomain };

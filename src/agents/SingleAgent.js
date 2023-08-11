@@ -80,18 +80,39 @@ export default class SingleAgent extends Agent {
     }
 
     onMap() {
+        // the idea is to build a matrix with all the cells of the map assigning a type (to understand the type of) and a value (to understand how good it is to go there)
         this.apiService.onMap((width, height, cells) => {
             //console.log('map', width, height, cells);
             this.map.width = width;
             this.map.height = height;
             this.map.cells = cells;
+            this.map.matrix = [];
+            // build the matrix with all elements equal to "wall"
+            for (let i = 0; i < height; i++) {
+                this.map.matrix[i] = [];
+                for (let j = 0; j < width; j++) {
+                    this.map.matrix[i][j] = {
+                        type: 'wall',
+                        value: 0,
+                    };
+                }
+            }
 
             // get the delivery tiles
             cells.forEach((cell) => {
                 if (cell.delivery) {
                     this.deliveryTiles.push({ x: cell.x, y: cell.y });
-                }
+                    this.map.matrix[cell.y][cell.x] = {
+                        type: 'delivery',
+                        value: 0,
+                    };
+                } else
+                    this.map.matrix[cell.y][cell.x] = {
+                        type: 'normal',
+                        value: 0,
+                    };
             });
+            //console.log(this.map.matrix);
         });
     }
 
