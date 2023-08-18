@@ -98,12 +98,14 @@ function specifyMyState(beliefsSet, me) {
     beliefsSet.declare(`at me_${me.id} tile_${me.x}-${me.y}`);
 }
 
-function specifyGoal(destinationTile) {
+function specifyGoal(destinationTile, me) {
     let goal = '';
     if (destinationTile.hasParcel) {
-        goal = `at me_${me.id} tile_${destinationTile.x}-${destinationTile.y}`;
+        goal = `carriedBy parcel_${destinationTile.parcelId} me_${me.id}`;
     } else {
-        goal = `at parcel_${destinationTile.parcelId} tile_${destinationTile.x}-${destinationTile.y}`;
+        goal = `at me_${me.id} tile_${destinationTile.x}-${destinationTile.y}`;
+        goal += ` and at parcel_${destinationTile.parcelId} tile_${destinationTile.x}-${destinationTile.y}`;
+        goal += ` and not (carriedBy parcel_${destinationTile.parcelId} me_${me.id})`;
     }
 
     return goal;
