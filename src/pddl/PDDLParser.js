@@ -137,7 +137,7 @@ async function getPlanActions(parcels, agents, map, destinationTile, me) {
     // goal could be defined as destinationTile = { hasParcel: false/true, x: 0, y: 0, parcelId: 234j23i}
     // if hasParcel is true, then the goal is to move to the destinationTile where a parcel is located
     // otherwise, the goal is to deliver the parcel to the destinationTile
-    let encodedGoal = specifyGoal(destinationTile);
+    let encodedGoal = specifyGoal(destinationTile, me);
 
     //Create the PDDL problem (adapted from lab5)
     let pddlProblem = new PddlProblem(
