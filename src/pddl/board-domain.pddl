@@ -1,17 +1,19 @@
-;; domain file: domain-lights.pddl
-(define (domain default)
+;; domain file: board-domain.pddl
+(define (domain board-domain)
     (:requirements :strips)
     (:predicates
         (tile ?t)
         (delivery ?t)
+        (wall ?t)
         (agent ?a)
         (parcel ?p)
         (me ?a)
-        (at ?agentOrParcel ?tile)
         (right ?t1 ?t2)
         (left ?t1 ?t2)
         (up ?t1 ?t2)
         (down ?t1 ?t2)
+        (at ?agentOrParcel ?tile)
+        (carriedBy ?parcel ?agent)
     )
 
     (:action right
@@ -75,10 +77,12 @@
             (at ?me ?tile)
             (at ?parcel ?tile)
             (not (delivery ?parcel))
+            (not (carriedBy ?parcel ?me))
         )
         :effect (and
             (delivery ?parcel)
             (not (at ?parcel ?tile))
+            (carriedBy ?parcel ?me)
         )
     )
 
@@ -90,10 +94,12 @@
             (tile ?tile)
             (at ?me ?tile)
             (delivery ?parcel)
+            (carriedBy ?parcel ?me)
         )
         :effect (and
             (at ?parcel ?tile)
             (not (delivery ?parcel))
+            (not (carriedBy ?parcel ?me))
         )
     )
 )

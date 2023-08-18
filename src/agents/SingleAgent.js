@@ -88,9 +88,9 @@ export default class SingleAgent extends Agent {
             this.map.cells = cells;
             this.map.matrix = [];
             // build the matrix with all elements equal to "wall"
-            for (let i = 0; i < height; i++) {
+            for (let i = 0; i < this.map.height; i++) {
                 this.map.matrix[i] = [];
-                for (let j = 0; j < width; j++) {
+                for (let j = 0; j < this.map.width; j++) {
                     this.map.matrix[i][j] = {
                         type: 'wall',
                         value: 0,
