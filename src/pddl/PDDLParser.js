@@ -3,15 +3,30 @@ import { PddlProblem, Beliefset, onlineSolver } from '@unitn-asa/pddl-client';
 
 async function readDomain() {
     let domain = await new Promise((resolve, reject) => {
-        fs.readFile('./board-domain.pddl', 'utf8', function (err, data) {
+        fs.readFile('src/pddl/board-domain.pddl', 'utf8', function (err, data) {
             if (err) {
                 reject(err);
+            } else {
+                resolve(data);
             }
-            resolve(data);
         });
     });
 
     return domain;
+}
+
+async function saveToFile(encodedProblem) {
+    var path = 'src/pddl/tmp/problem.pddl';
+
+    return new Promise((res, rej) => {
+        fs.writeFile(path, encodedProblem, (err) => {
+            if (err) {
+                rej(err);
+            } else {
+                res(path);
+            }
+        });
+    });
 }
 
 function addMapToBeliefSet(beliefs, map) {
@@ -23,7 +38,7 @@ function addMapToBeliefSet(beliefs, map) {
 }
 
 function addParcelsToBeliefSet(beliefs, parcels) {
-    for (const parcel of parcels) {
+    for (const parcel of parcels.values()) {
         beliefs.addObject(`parcel_${parcel.id}`);
     }
 }
@@ -33,6 +48,10 @@ function addMyselfToBeliefSet(beliefs, me) {
 }
 
 function addAgentsToBeliefSet(beliefs, agents) {
+    if (agents.size === 1) {
+        return;
+    }
+
     for (const agent of agents) {
         beliefs.addObject(`agent_${agent.id}`);
     }
@@ -44,11 +63,11 @@ function assignTileType(beliefsSet, map) {
             if (map.matrix[i][j].type === 'wall') {
                 beliefsSet.declare(`wall tile_${i}-${j}`);
             } else if (
-                map.cells[i][j].type === 'delivery' ||
-                map.cells[i][j].type === 'normal'
+                map.matrix[i][j].type === 'delivery' ||
+                map.matrix[i][j].type === 'normal'
             ) {
                 beliefsSet.declare(`tile tile_${i}-${j}`);
-                if (map.cells[i][j].type === 'delivery') {
+                if (map.matrix[i][j].type === 'delivery') {
                     beliefsSet.declare(`delivery tile_${i}-${j}`);
                 }
             }
@@ -57,7 +76,7 @@ function assignTileType(beliefsSet, map) {
 }
 
 function declareParcels(beliefsSet, parcels) {
-    for (const parcel of parcels) {
+    for (const parcel of parcels.values()) {
         beliefsSet.declare(`parcel parcel_${parcel.id}`);
     }
 }
@@ -67,18 +86,22 @@ function declareMyself(beliefsSet, me) {
 }
 
 function declareAgents(beliefsSet, agents) {
+    if (agents.size === 1) {
+        return;
+    }
+
     for (const agent of agents) {
         beliefsSet.declare(`agent agent_${agent.id}`);
     }
 }
 
 function specifyParcelsState(beliefsSet, parcels, me) {
-    for (const parcel of parcels) {
-        if (parcel.carriedBy.id === me.id) {
-            beliefsSet.declare(`carriedBy parcel_${parcel.id} agent_${me.id}`);
+    for (const parcel of parcels.values()) {
+        if (parcel.carriedBy === me.id) {
+            beliefsSet.declare(`carriedBy parcel_${parcel.id} me_${me.id}`);
         } else if (parcel.carriedBy !== null) {
             beliefsSet.declare(
-                `carriedBy parcel_${parcel.id} agent_${parcel.carriedBy.id}`
+                `carriedBy parcel_${parcel.id} agent_${parcel.carriedBy}`
             );
         } else if (parcel.carriedBy === null) {
             beliefsSet.declare(
@@ -89,6 +112,10 @@ function specifyParcelsState(beliefsSet, parcels, me) {
 }
 
 function specifyAgentsState(beliefsSet, agents) {
+    if (agents.size === 1) {
+        return;
+    }
+
     for (const agent of agents) {
         beliefsSet.declare(`at agent_${agent.id} tile_${agent.x}-${agent.y}`);
     }
@@ -113,7 +140,7 @@ function specifyGoal(destinationTile, me) {
 
 async function getPlanActions(parcels, agents, map, destinationTile, me) {
     let beliefs = new Beliefset();
-
+    console.log('destinationTile', destinationTile);
     // objects declaration ((:objects) clouse in the PDDL problem file)
     addMapToBeliefSet(beliefs, map);
     addParcelsToBeliefSet(beliefs, parcels);
@@ -148,8 +175,8 @@ async function getPlanActions(parcels, agents, map, destinationTile, me) {
     );
 
     let domain = await readDomain();
-    // pddlProblem.saveToFile(); // helps to see if the problem is correctly defined
     let encodedProblem = pddlProblem.toPddlString();
+    await saveToFile(encodedProblem); // helps to see if the problem is correctly defined
 
     let plan = await onlineSolver(domain, encodedProblem);
 

@@ -1,5 +1,5 @@
 ;; domain file: board-domain.pddl
-(define (domain board-domain)
+(define (domain default)
     (:requirements :strips)
     (:predicates
         (tile ?t)
@@ -16,10 +16,14 @@
         (carriedBy ?parcel ?agent)
     )
 
-    (:action right
+    (:action right_move
         :parameters (?me ?from ?to)
         :precondition (and
             (me ?me)
+            (not (wall ?from))
+            (not (wall ?to))
+            (tile ?from)
+            (tile ?to)
             (at ?me ?from)
             (right ?from ?to)
         )
@@ -29,10 +33,14 @@
         )
     )
 
-    (:action left
+    (:action left_move
         :parameters (?me ?from ?to)
         :precondition (and
             (me ?me)
+            (not (wall ?from))
+            (not (wall ?to))
+            (tile ?from)
+            (tile ?to)
             (at ?me ?from)
             (left ?from ?to)
         )
@@ -42,10 +50,14 @@
         )
     )
 
-    (:action up
+    (:action up_move
         :parameters (?me ?from ?to)
         :precondition (and
             (me ?me)
+            (not (wall ?from))
+            (not (wall ?to))
+            (tile ?from)
+            (tile ?to)
             (at ?me ?from)
             (up ?from ?to)
         )
@@ -55,10 +67,14 @@
         )
     )
 
-    (:action down
+    (:action down_move
         :parameters (?me ?from ?to)
         :precondition (and
             (me ?me)
+            (not (wall ?from))
+            (not (wall ?to))
+            (tile ?from)
+            (tile ?to)
             (at ?me ?from)
             (down ?from ?to)
         )
@@ -76,11 +92,9 @@
             (tile ?tile)
             (at ?me ?tile)
             (at ?parcel ?tile)
-            (not (delivery ?parcel))
             (not (carriedBy ?parcel ?me))
         )
         :effect (and
-            (delivery ?parcel)
             (not (at ?parcel ?tile))
             (carriedBy ?parcel ?me)
         )
@@ -92,13 +106,12 @@
             (me ?me)
             (parcel ?parcel)
             (tile ?tile)
+            (delivery ?tile)
             (at ?me ?tile)
-            (delivery ?parcel)
             (carriedBy ?parcel ?me)
         )
         :effect (and
             (at ?parcel ?tile)
-            (not (delivery ?parcel))
             (not (carriedBy ?parcel ?me))
         )
     )

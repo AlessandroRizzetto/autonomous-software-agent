@@ -1,4 +1,5 @@
 import Agent from './Agent.js';
+import { getPlanActions } from '../pddl/PDDLParser.js';
 // import GoPickUp from '../models/GoPickUp.js';
 
 export default class SingleAgent extends Agent {
@@ -102,12 +103,12 @@ export default class SingleAgent extends Agent {
             cells.forEach((cell) => {
                 if (cell.delivery) {
                     this.deliveryTiles.push({ x: cell.x, y: cell.y });
-                    this.map.matrix[cell.y][cell.x] = {
+                    this.map.matrix[cell.x][cell.y] = {
                         type: 'delivery',
                         value: 0,
                     };
                 } else
-                    this.map.matrix[cell.y][cell.x] = {
+                    this.map.matrix[cell.x][cell.y] = {
                         type: 'normal',
                         value: 0,
                     };
@@ -178,6 +179,22 @@ export default class SingleAgent extends Agent {
              */
             if (best_option)
                 this.queue(best_option.desire, ...best_option.args);
+
+            let bestOption = this.getBestOptions()[0];
+            let actions = await getPlanActions(
+                this.visibleParcels,
+                this.visibleAgents,
+                this.map,
+                {
+                    hasParcel: true,
+                    x: bestOption.parcel.x,
+                    y: bestOption.parcel.y,
+                    parcelId: bestOption.parcel.id,
+                },
+                this.me
+            );
+
+            console.log('actions', actions);
         }); //maybe this can work
     }
 
@@ -246,10 +263,18 @@ export default class SingleAgent extends Agent {
                             distanceFromParceltoDeliveryTile;
                         const timeToDeliverParcel =
                             totalDistance / agentVelocity;
-                        const parcelLostReward =
-                            timeToDeliverParcel / parcelDecadingInterval;
-                        const parcelRemainingReward =
-                            parcel.reward - parcelLostReward;
+                        console.log('time to deliver', timeToDeliverParcel);
+                        console.log(
+                            'parcel decading interval',
+                            parcelDecadingInterval
+                        );
+                        let parcelRemainingReward = parcel.reward;
+                        if (parcelDecadingInterval !== 0) {
+                            const parcelLostReward =
+                                timeToDeliverParcel / parcelDecadingInterval;
+                            parcelRemainingReward =
+                                parcel.reward - parcelLostReward;
+                        }
                         options.push({
                             parcel,
                             deliveryTile,
@@ -269,6 +294,7 @@ export default class SingleAgent extends Agent {
                 bestOption.parcelRemainingReward / 2
             );
         });
+        console.log('options', options);
         return options;
     }
 }
