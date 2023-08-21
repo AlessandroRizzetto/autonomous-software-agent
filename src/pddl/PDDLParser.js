@@ -62,14 +62,26 @@ function assignTileType(beliefsSet, map) {
         for (let j = 0; j < map.width; j++) {
             if (map.matrix[i][j].type === 'wall') {
                 beliefsSet.declare(`wall tile_${i}-${j}`);
-            } else if (
-                map.matrix[i][j].type === 'delivery' ||
-                map.matrix[i][j].type === 'normal'
-            ) {
+            } else if (map.matrix[i][j].type === 'normal') {
                 beliefsSet.declare(`tile tile_${i}-${j}`);
-                if (map.matrix[i][j].type === 'delivery') {
-                    beliefsSet.declare(`delivery tile_${i}-${j}`);
-                }
+            } else if (map.matrix[i][j].type === 'delivery') {
+                beliefsSet.declare(`delivery tile_${i}-${j}`);
+            }
+            const right = i + 1;
+            const left = i - 1;
+            const up = j + 1;
+            const down = j - 1;
+            if (right < map.width && right >= 0) {
+                beliefsSet.declare(`right tile_${i}-${j} tile_${right}-${j}`);
+            }
+            if (left < map.width && left >= 0) {
+                beliefsSet.declare(`left tile_${i}-${j} tile_${left}-${j}`);
+            }
+            if (up < map.height && up >= 0) {
+                beliefsSet.declare(`up tile_${i}-${j} tile_${i}-${up}`);
+            }
+            if (down < map.height && down >= 0) {
+                beliefsSet.declare(`down tile_${i}-${j} tile_${i}-${down}`);
             }
         }
     }

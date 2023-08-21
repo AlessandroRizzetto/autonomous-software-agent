@@ -60,7 +60,7 @@ export default class SingleAgent extends Agent {
     // this method lists all the agents that you can see
     onAgentsSensing() {
         this.apiService.onAgentsSensing((agents) => {
-            console.log('agents', agents);
+            //console.log('agents', agents);
             for (const agent of agents) {
                 // round the coordinates to avoid floating point positions
                 agent.x = Math.round(agent.x);
@@ -144,7 +144,7 @@ export default class SingleAgent extends Agent {
             }
             const options = [];
             console.log('playing');
-            console.log('visible parcels', this.visibleParcels);
+            //console.log('visible parcels', this.visibleParcels);
             // console.log(this);
             // TO DO: Extend this part for the generation of the options
             for (const parcel of this.visibleParcels.values()) {
@@ -172,7 +172,7 @@ export default class SingleAgent extends Agent {
             const bla = this.getBestOptions();
             console.log('Options lenght', bla.length);
             console.log('Best option', bla[0]);
-            console.log('Options', bla);
+            //console.log('Options', bla);
             console.log('============================');
             /**
              * Revise/queue intention if I have a better option
@@ -181,20 +181,40 @@ export default class SingleAgent extends Agent {
                 this.queue(best_option.desire, ...best_option.args);
 
             let bestOption = this.getBestOptions()[0];
-            let actions = await getPlanActions(
-                this.visibleParcels,
-                this.visibleAgents,
-                this.map,
-                {
-                    hasParcel: true,
-                    x: bestOption.parcel.x,
-                    y: bestOption.parcel.y,
-                    parcelId: bestOption.parcel.id,
-                },
-                this.me
-            );
+            var planExecuted = false;
+            var numberOfActionsExecuted = 0;
+            if (planExecuted === true || numberOfActionsExecuted === 0) {
+                //NOT WORKING
+                var actions = await getPlanActions(
+                    this.visibleParcels,
+                    this.visibleAgents,
+                    this.map,
+                    {
+                        hasParcel: true,
+                        x: bestOption.parcel.x,
+                        y: bestOption.parcel.y,
+                        parcelId: bestOption.parcel.id,
+                    },
+                    this.me
+                );
+            }
 
             console.log('actions', actions);
+
+            for (const action of actions) {
+                await this.move(action);
+                //await this.timer(100);
+                console.log('move done');
+
+                if (action === actions[actions.length - 1]) {
+                    planExecuted = true;
+                }
+                numberOfActionsExecuted = numberOfActionsExecuted + 1;
+                console.log(
+                    'number of actions executed',
+                    numberOfActionsExecuted
+                );
+            }
         }); //maybe this can work
     }
 
@@ -230,7 +250,7 @@ export default class SingleAgent extends Agent {
         let agentMovementDuration = this.config.MOVEMENT_DURATION;
         let agentVelocity = 1 / agentMovementDuration;
         for (const parcel of this.visibleParcels.values()) {
-            console.log('parcel', parcel.carriedBy);
+            //console.log('parcel', parcel.carriedBy);
             if (!parcel.carriedBy || this.me.id === parcel.carriedBy) {
                 for (const deliveryTile of this.deliveryTiles) {
                     let shortestAgentDistanceToParcel = Number.MAX_VALUE;
@@ -263,11 +283,11 @@ export default class SingleAgent extends Agent {
                             distanceFromParceltoDeliveryTile;
                         const timeToDeliverParcel =
                             totalDistance / agentVelocity;
-                        console.log('time to deliver', timeToDeliverParcel);
-                        console.log(
-                            'parcel decading interval',
-                            parcelDecadingInterval
-                        );
+                        //console.log('time to deliver', timeToDeliverParcel);
+                        // console.log(
+                        //     'parcel decading interval',
+                        //     parcelDecadingInterval
+                        // );
                         let parcelRemainingReward = parcel.reward;
                         if (parcelDecadingInterval !== 0) {
                             const parcelLostReward =
@@ -294,7 +314,7 @@ export default class SingleAgent extends Agent {
                 bestOption.parcelRemainingReward / 2
             );
         });
-        console.log('options', options);
+        //console.log('options', options);
         return options;
     }
 }

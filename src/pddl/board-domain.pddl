@@ -16,7 +16,7 @@
         (carriedBy ?parcel ?agent)
     )
 
-    (:action right_move
+    (:action right
         :parameters (?me ?from ?to)
         :precondition (and
             (me ?me)
@@ -33,7 +33,7 @@
         )
     )
 
-    (:action left_move
+    (:action left
         :parameters (?me ?from ?to)
         :precondition (and
             (me ?me)
@@ -50,7 +50,7 @@
         )
     )
 
-    (:action up_move
+    (:action up
         :parameters (?me ?from ?to)
         :precondition (and
             (me ?me)
@@ -67,7 +67,7 @@
         )
     )
 
-    (:action down_move
+    (:action down
         :parameters (?me ?from ?to)
         :precondition (and
             (me ?me)
