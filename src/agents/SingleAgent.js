@@ -83,12 +83,11 @@ export default class SingleAgent extends Agent {
     onMap() {
         // the idea is to build a matrix with all the cells of the map assigning a type (to understand the type of) and a value (to understand how good it is to go there)
         this.apiService.onMap((width, height, cells) => {
-            //console.log('map', width, height, cells);
             this.map.width = width;
             this.map.height = height;
             this.map.cells = cells;
             this.map.matrix = [];
-            // build the matrix with all elements equal to "wall"
+
             for (let i = 0; i < this.map.height; i++) {
                 this.map.matrix[i] = [];
                 for (let j = 0; j < this.map.width; j++) {
@@ -99,7 +98,6 @@ export default class SingleAgent extends Agent {
                 }
             }
 
-            // get the delivery tiles
             cells.forEach((cell) => {
                 if (cell.delivery) {
                     this.deliveryTiles.push({ x: cell.x, y: cell.y });
@@ -113,7 +111,6 @@ export default class SingleAgent extends Agent {
                         value: 0,
                     };
             });
-            //console.log(this.map.matrix);
         });
     }
 
@@ -136,86 +133,103 @@ export default class SingleAgent extends Agent {
      */
 
     async play() {
+        let stillExecuting = false;
         this.apiService.onParcelsSensing(async (parcels) => {
+            if (stillExecuting) {
+                return;
+            }
+
             this.visibleParcels.clear();
             for (const parcel of parcels) {
                 // set is used to avoid duplicates
                 this.visibleParcels.set(parcel.id, parcel);
             }
-            const options = [];
-            console.log('playing');
-            //console.log('visible parcels', this.visibleParcels);
-            // console.log(this);
-            // TO DO: Extend this part for the generation of the options
-            for (const parcel of this.visibleParcels.values()) {
-                if (!parcel.carriedBy) {
-                    options.push({ desire: 'go_pick_up', args: [parcel] });
-                }
-            }
 
-            // TO DO: Revisit the selection of the best option
-            let best_option;
-            let nearest = Number.MAX_VALUE;
-            for (const option of options) {
-                if (option[0] == 'go_pick_up') {
-                    let [go_pick_up, x, y, id] = option;
-                    let current_d = distance({ x, y }, me);
-                    if (current_d < nearest) {
-                        best_option = option;
-                        nearest = current_d;
-                    }
-                }
-            }
-            // await this.move(this.PossibleMove.Down);
-            console.log('============================');
-            console.log(this.me);
-            const bla = this.getBestOptions();
-            console.log('Options lenght', bla.length);
-            console.log('Best option', bla[0]);
-            //console.log('Options', bla);
-            console.log('============================');
+            const bestOptions = this.getBestOptions();
+
             /**
              * Revise/queue intention if I have a better option
              */
-            if (best_option)
-                this.queue(best_option.desire, ...best_option.args);
+            // if (best_option)
+            //     this.queue(best_option.desire, ...best_option.args);
 
-            let bestOption = this.getBestOptions()[0];
-            var planExecuted = false;
-            var numberOfActionsExecuted = 0;
-            if (planExecuted === true || numberOfActionsExecuted === 0) {
-                //NOT WORKING
-                var actions = await getPlanActions(
+            // let bestOption = bestOptions[0];
+            // var planExecuted = false;
+            // var numberOfActionsExecuted = 0;
+            // if (planExecuted === true || numberOfActionsExecuted === 0) {
+            //NOT WORKING
+
+            for (const option of bestOptions) {
+                stillExecuting = true;
+                let actions = await getPlanActions(
                     this.visibleParcels,
                     this.visibleAgents,
                     this.map,
                     {
                         hasParcel: true,
-                        x: bestOption.parcel.x,
-                        y: bestOption.parcel.y,
-                        parcelId: bestOption.parcel.id,
+                        x: option.parcel.x,
+                        y: option.parcel.y,
+                        parcelId: option.parcel.id,
                     },
                     this.me
                 );
-            }
 
-            console.log('actions', actions);
+                console.log('actions to pick up', actions);
 
-            for (const action of actions) {
-                await this.move(action);
-                //await this.timer(100);
-                console.log('move done');
-
-                if (action === actions[actions.length - 1]) {
-                    planExecuted = true;
+                for (const action of actions) {
+                    if (action === this.PossibleActions.Pickup) {
+                        await this.pickup();
+                    } else if (action === this.PossibleActions.Putdown) {
+                        await this.putdown();
+                    } else {
+                        await this.move(action);
+                    }
                 }
-                numberOfActionsExecuted = numberOfActionsExecuted + 1;
-                console.log(
-                    'number of actions executed',
-                    numberOfActionsExecuted
+
+                actions = await getPlanActions(
+                    this.visibleParcels,
+                    this.visibleAgents,
+                    this.map,
+                    {
+                        hasParcel: false,
+                        x: option.deliveryTile.x,
+                        y: option.deliveryTile.y,
+                        parcelId: option.parcel.id,
+                    },
+                    this.me
                 );
+
+                console.log('actions to put down', actions);
+
+                for (const action of actions) {
+                    if (action === this.PossibleActions.Pickup) {
+                        await this.pickup();
+                    } else if (action === this.PossibleActions.Putdown) {
+                        await this.putdown();
+                    } else {
+                        await this.move(action);
+                    }
+                }
+
+                stillExecuting = false;
             }
-        }); //maybe this can work
+            // }
+
+            // for (const action of actions) {
+            //     await this.move(action);
+            //     //await this.timer(100);
+            //     console.log('move done');
+
+            //     if (action === actions[actions.length - 1]) {
+            //         planExecuted = true;
+            //     }
+            //     numberOfActionsExecuted = numberOfActionsExecuted + 1;
+            //     console.log(
+            //         'number of actions executed',
+            //         numberOfActionsExecuted
+            //     );
+            // }
+        });
     }
 
     async intentionLoop() {
@@ -250,7 +264,6 @@ export default class SingleAgent extends Agent {
         let agentMovementDuration = this.config.MOVEMENT_DURATION;
         let agentVelocity = 1 / agentMovementDuration;
         for (const parcel of this.visibleParcels.values()) {
-            //console.log('parcel', parcel.carriedBy);
             if (!parcel.carriedBy || this.me.id === parcel.carriedBy) {
                 for (const deliveryTile of this.deliveryTiles) {
                     let shortestAgentDistanceToParcel = Number.MAX_VALUE;
@@ -283,11 +296,6 @@ export default class SingleAgent extends Agent {
                             distanceFromParceltoDeliveryTile;
                         const timeToDeliverParcel =
                             totalDistance / agentVelocity;
-                        //console.log('time to deliver', timeToDeliverParcel);
-                        // console.log(
-                        //     'parcel decading interval',
-                        //     parcelDecadingInterval
-                        // );
                         let parcelRemainingReward = parcel.reward;
                         if (parcelDecadingInterval !== 0) {
                             const parcelLostReward =
@@ -314,7 +322,6 @@ export default class SingleAgent extends Agent {
                 bestOption.parcelRemainingReward / 2
             );
         });
-        //console.log('options', options);
         return options;
     }
 }

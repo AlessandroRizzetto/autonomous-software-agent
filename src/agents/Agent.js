@@ -6,11 +6,13 @@ export default class Agent {
             throw new TypeError('Cannot instantiate abstract class');
         }
         this.apiService = new DeliverooApi(process.env.HOST, process.env.TOKEN);
-        this.PossibleMove = Object.freeze({
+        this.PossibleActions = Object.freeze({
             Up: 'up',
             Right: 'right',
             Down: 'down',
             Left: 'left',
+            Pickup: 'pickup',
+            Putdown: 'putdown',
         });
         this.registerListeners();
     }

@@ -65,6 +65,7 @@ function assignTileType(beliefsSet, map) {
             } else if (map.matrix[i][j].type === 'normal') {
                 beliefsSet.declare(`tile tile_${i}-${j}`);
             } else if (map.matrix[i][j].type === 'delivery') {
+                beliefsSet.declare(`tile tile_${i}-${j}`);
                 beliefsSet.declare(`delivery tile_${i}-${j}`);
             }
             const right = i + 1;
@@ -129,22 +130,28 @@ function specifyAgentsState(beliefsSet, agents) {
     }
 
     for (const agent of agents) {
-        beliefsSet.declare(`at agent_${agent.id} tile_${agent.x}-${agent.y}`);
+        beliefsSet.declare(
+            `at agent_${agent.id} tile_${Math.round(agent.x)}-${Math.round(
+                agent.y
+            )}`
+        );
     }
 }
 
 function specifyMyState(beliefsSet, me) {
-    beliefsSet.declare(`at me_${me.id} tile_${me.x}-${me.y}`);
+    beliefsSet.declare(
+        `at me_${me.id} tile_${Math.round(me.x)}-${Math.round(me.y)}`
+    );
 }
 
 function specifyGoal(destinationTile, me) {
     let goal = '';
-    if (destinationTile.hasParcel) {
+    if (destinationTile.hasParcel === true) {
         goal = `carriedBy parcel_${destinationTile.parcelId} me_${me.id}`;
     } else {
-        goal = `at me_${me.id} tile_${destinationTile.x}-${destinationTile.y}`;
-        goal += ` and at parcel_${destinationTile.parcelId} tile_${destinationTile.x}-${destinationTile.y}`;
-        goal += ` and not (carriedBy parcel_${destinationTile.parcelId} me_${me.id})`;
+        goal = `and (at me_${me.id} tile_${destinationTile.x}-${destinationTile.y})`;
+        goal += ` (at parcel_${destinationTile.parcelId} tile_${destinationTile.x}-${destinationTile.y})`;
+        goal += ` (not (carriedBy parcel_${destinationTile.parcelId} me_${me.id}))`;
     }
 
     return goal;
