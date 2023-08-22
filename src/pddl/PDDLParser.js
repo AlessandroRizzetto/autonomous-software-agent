@@ -16,7 +16,7 @@ async function readDomain() {
 }
 
 async function saveToFile(encodedProblem) {
-    var path = 'src/pddl/tmp/problem.pddl';
+    var path = 'src/pddl/problem.pddl';
 
     return new Promise((res, rej) => {
         fs.writeFile(path, encodedProblem, (err) => {
@@ -110,9 +110,7 @@ function declareAgents(beliefsSet, agents) {
 
 function specifyParcelsState(beliefsSet, parcels, me) {
     for (const parcel of parcels.values()) {
-        if (parcel.carriedBy === me.id) {
-            beliefsSet.declare(`carriedBy parcel_${parcel.id} me_${me.id}`);
-        } else if (parcel.carriedBy !== null) {
+        if (parcel.carriedBy !== null && parcel.carriedBy !== me.id) {
             beliefsSet.declare(
                 `carriedBy parcel_${parcel.id} agent_${parcel.carriedBy}`
             );
@@ -157,9 +155,9 @@ function specifyGoal(destinationTile, me) {
     return goal;
 }
 
-async function getPlanActions(parcels, agents, map, destinationTile, me) {
+async function generatePlanWithPddl(parcels, agents, map, destinationTile, me) {
     let beliefs = new Beliefset();
-    console.log('destinationTile', destinationTile);
+
     // objects declaration ((:objects) clouse in the PDDL problem file)
     addMapToBeliefSet(beliefs, map);
     addParcelsToBeliefSet(beliefs, parcels);
@@ -199,17 +197,11 @@ async function getPlanActions(parcels, agents, map, destinationTile, me) {
 
     let plan = await onlineSolver(domain, encodedProblem);
 
-    if (plan.length === 0) {
-        console.log('No plan found');
-        return;
+    if (!plan) {
+        throw new Error('No plan found');
     }
 
-    let actions = [];
-    for (const step of plan) {
-        actions.push(step.action);
-    }
-
-    return actions;
+    return plan;
 }
 
-export { getPlanActions };
+export { generatePlanWithPddl };

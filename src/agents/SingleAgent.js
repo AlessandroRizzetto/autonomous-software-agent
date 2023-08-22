@@ -1,5 +1,5 @@
 import Agent from './Agent.js';
-import { getPlanActions } from '../pddl/PDDLParser.js';
+import { generatePlanWithPddl } from '../pddl/PDDLParser.js';
 // import GoPickUp from '../models/GoPickUp.js';
 
 export default class SingleAgent extends Agent {
@@ -11,8 +11,9 @@ export default class SingleAgent extends Agent {
         this.visibleAgents = new Map();
         this.visibleParcels = new Map();
         this.deliveryTiles = [];
-        this.intetion_queue = new Array();
         this.plans = [];
+        this.isPlanInExecution = false;
+        this.intetion_queue = new Array();
         // plans.push(new GoPickUp()); // building the plan library // not sure if this is the right way to do it
     }
 
@@ -72,10 +73,73 @@ export default class SingleAgent extends Agent {
 
     // this method lists all the parcels that you can see
     onParcelsSensing() {
-        this.apiService.onParcelsSensing((parcels) => {
-            for (const parcel of parcels) {
-                // set is used to avoid duplicates
-                this.visibleParcels.set(parcel.id, parcel);
+        this.apiService.onParcelsSensing(async (parcels) => {
+            console.log('ON PARCEL SENSING');
+            if (this.isPlanInExecution === true) {
+                console.log('WAITING FOR PLAN TO BE EXECUTED');
+            } else {
+                this.isPlanInExecution = true;
+                this.visibleParcels.clear();
+                for (const parcel of parcels) {
+                    this.visibleParcels.set(parcel.id, parcel);
+                }
+
+                let bestOptions = this.getBestOptions();
+
+                if (bestOptions.length === 0) {
+                    this.isPlanInExecution = false;
+                    // await this.explore();
+                } else {
+                    console.log('BEFORE PLAINING');
+                    let bestOption = bestOptions.shift();
+                    let planToReachParcel = await this.generatePlan(
+                        bestOption,
+                        true
+                    );
+                    console.log('AFTER PLAINING');
+
+                    if (planToReachParcel.length <= 0) {
+                        this.isPlanInExecution = false;
+                        console.log('NO PLAN');
+                        // await this.explore();
+                    } else {
+                        this.plans.push(planToReachParcel);
+                        while (this.plans.length > 0) {
+                            let planToReachParcel = this.plans.shift();
+                            try {
+                                console.log('EXECUTING PLAN TO REACH PARCEL');
+                                await this.executePlan(planToReachParcel);
+
+                                let planToReachDeliveryTile =
+                                    await this.generatePlan(bestOption, false);
+                                if (planToReachDeliveryTile.length > 0) {
+                                    console.log(
+                                        'EXECUTING PLAN TO REACH DELIVERY TILE'
+                                    );
+                                    await this.executePlan(
+                                        planToReachDeliveryTile
+                                    );
+                                }
+                                break;
+                            } catch (error) {
+                                console.log('GENERATING NEW PLAN');
+                                let bestOption = bestOptions.shift();
+                                if (bestOption) {
+                                    plan = await this.generatePlan(
+                                        bestOption,
+                                        true
+                                    );
+                                    if (plan.length > 0) {
+                                        this.plans.push(plan);
+                                    }
+                                    continue;
+                                }
+                                continue;
+                            }
+                        }
+                        this.isPlanInExecution = false;
+                    }
+                }
             }
         });
     }
@@ -132,104 +196,37 @@ export default class SingleAgent extends Agent {
      * BDI loop
      */
 
-    async play() {
-        let stillExecuting = false;
-        this.apiService.onParcelsSensing(async (parcels) => {
-            if (stillExecuting) {
-                return;
-            }
+    async generatePlan(option, hasParcel) {
+        let plan = [];
 
-            this.visibleParcels.clear();
-            for (const parcel of parcels) {
-                // set is used to avoid duplicates
-                this.visibleParcels.set(parcel.id, parcel);
-            }
+        let copyOfVisibleParcels = new Map(this.visibleParcels);
+        let copyOfVisibleAgents = new Map(this.visibleAgents);
+        let copyOfMe = { ...this.me };
 
-            const bestOptions = this.getBestOptions();
+        try {
+            plan = await generatePlanWithPddl(
+                copyOfVisibleParcels,
+                copyOfVisibleAgents,
+                this.map,
+                {
+                    hasParcel: hasParcel,
+                    x: hasParcel ? option.parcel.x : option.deliveryTile.x,
+                    y: hasParcel ? option.parcel.y : option.deliveryTile.y,
+                    parcelId: option.parcel.id,
+                },
+                copyOfMe
+            );
 
-            /**
-             * Revise/queue intention if I have a better option
-             */
-            // if (best_option)
-            //     this.queue(best_option.desire, ...best_option.args);
+            return plan;
+        } catch (error) {
+            console.log('SOME ERROR');
+        }
 
-            // let bestOption = bestOptions[0];
-            // var planExecuted = false;
-            // var numberOfActionsExecuted = 0;
-            // if (planExecuted === true || numberOfActionsExecuted === 0) {
-            //NOT WORKING
+        return plan;
+    }
 
-            for (const option of bestOptions) {
-                stillExecuting = true;
-                let actions = await getPlanActions(
-                    this.visibleParcels,
-                    this.visibleAgents,
-                    this.map,
-                    {
-                        hasParcel: true,
-                        x: option.parcel.x,
-                        y: option.parcel.y,
-                        parcelId: option.parcel.id,
-                    },
-                    this.me
-                );
-
-                console.log('actions to pick up', actions);
-
-                for (const action of actions) {
-                    if (action === this.PossibleActions.Pickup) {
-                        await this.pickup();
-                    } else if (action === this.PossibleActions.Putdown) {
-                        await this.putdown();
-                    } else {
-                        await this.move(action);
-                    }
-                }
-
-                actions = await getPlanActions(
-                    this.visibleParcels,
-                    this.visibleAgents,
-                    this.map,
-                    {
-                        hasParcel: false,
-                        x: option.deliveryTile.x,
-                        y: option.deliveryTile.y,
-                        parcelId: option.parcel.id,
-                    },
-                    this.me
-                );
-
-                console.log('actions to put down', actions);
-
-                for (const action of actions) {
-                    if (action === this.PossibleActions.Pickup) {
-                        await this.pickup();
-                    } else if (action === this.PossibleActions.Putdown) {
-                        await this.putdown();
-                    } else {
-                        await this.move(action);
-                    }
-                }
-
-                stillExecuting = false;
-            }
-            // }
-
-            // for (const action of actions) {
-            //     await this.move(action);
-            //     //await this.timer(100);
-            //     console.log('move done');
-
-            //     if (action === actions[actions.length - 1]) {
-            //         planExecuted = true;
-            //     }
-            //     numberOfActionsExecuted = numberOfActionsExecuted + 1;
-            //     console.log(
-            //         'number of actions executed',
-            //         numberOfActionsExecuted
-            //     );
-            // }
-        });
+    play() {
+        // probably to be removed
     }
 
     async intentionLoop() {
@@ -256,6 +253,72 @@ export default class SingleAgent extends Agent {
         for (const intention of this.intetion_queue) {
             intention.stop();
         }
+    }
+
+    async executePlan(plan) {
+        let actions = this.getActionsFromPlan(plan);
+        console.log('actions', actions);
+        for (const action of actions) {
+            if (action === this.PossibleActions.Pickup) {
+                await this.pickup();
+            } else if (action === this.PossibleActions.Putdown) {
+                await this.putdown();
+            } else {
+                await this.move(action);
+            }
+        }
+    }
+
+    async explore() {
+        // I am in a grid and I want to move from the four quadrants torwards the center I can do it by moving randomly in one of the four directions
+
+        let numberOfActions = 5;
+        for (let i = 0; i < numberOfActions; i++) {
+            try {
+                let { x, y } = { x: this.me.x, y: this.me.y };
+
+                if (x <= this.map.width / 2 && y <= this.map.height / 2) {
+                    // I am in the first quadrant
+                    let direction = this.getRandomDirection([
+                        this.PossibleActions.Up,
+                        this.PossibleActions.Right,
+                    ]);
+                    await this.move(direction);
+                } else if (x <= this.map.width / 2 && y > this.map.height / 2) {
+                    // I am in the second quadrant
+                    let direction = this.getRandomDirection([
+                        this.PossibleActions.Down,
+                        this.PossibleActions.Right,
+                    ]);
+                    await this.move(direction);
+                } else if (x > this.map.width / 2 && y <= this.map.height / 2) {
+                    // I am in the third quadrant
+                    let direction = this.getRandomDirection([
+                        this.PossibleActions.Up,
+                        this.PossibleActions.Left,
+                    ]);
+                    await this.move(direction);
+                } else if (x > this.map.width / 2 && y > this.map.height / 2) {
+                    // I am in the fourth quadrant
+                    let direction = this.getRandomDirection([
+                        this.PossibleActions.Down,
+                        this.PossibleActions.Left,
+                    ]);
+                    await this.move(direction);
+                }
+            } catch (error) {
+                continue;
+            }
+        }
+    }
+
+    getActionsFromPlan(plan) {
+        let actions = [];
+        for (const step of plan) {
+            actions.push(step.action);
+        }
+
+        return actions;
     }
 
     getBestOptions() {
@@ -312,9 +375,22 @@ export default class SingleAgent extends Agent {
                 }
             }
         }
+
         options.sort((a, b) => {
-            return b.parcelRemainingReward - a.parcelRemainingReward;
+            if (b.parcelRemainingReward !== a.parcelRemainingReward) {
+                return b.parcelRemainingReward - a.parcelRemainingReward;
+            } else {
+                const distanceToA = this.distance(a.parcel, a.deliveryTile);
+                const distanceToB = this.distance(b.parcel, b.deliveryTile);
+
+                return distanceToA - distanceToB;
+            }
         });
+
+        if (options.length === 0) {
+            return options;
+        }
+
         const bestOption = options[0];
         options = options.filter((option) => {
             return (
