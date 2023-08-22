@@ -103,5 +103,5 @@ dist
 # TernJS port file
 .tern-port
 
-# tmp folder
-**/tmp
+# pddl problem file for development
+**/problem.pddl

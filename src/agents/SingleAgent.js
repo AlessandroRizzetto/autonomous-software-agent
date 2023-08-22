@@ -13,6 +13,7 @@ export default class SingleAgent extends Agent {
         this.deliveryTiles = [];
         this.plans = [];
         this.isPlanInExecution = false;
+        this.exploring = false;
         this.intetion_queue = new Array();
         // plans.push(new GoPickUp()); // building the plan library // not sure if this is the right way to do it
     }
@@ -75,7 +76,7 @@ export default class SingleAgent extends Agent {
     onParcelsSensing() {
         this.apiService.onParcelsSensing(async (parcels) => {
             console.log('ON PARCEL SENSING');
-            if (this.isPlanInExecution === true) {
+            if (this.isPlanInExecution === true || this.exploring === true) {
                 console.log('WAITING FOR PLAN TO BE EXECUTED');
             } else {
                 this.isPlanInExecution = true;
@@ -88,7 +89,9 @@ export default class SingleAgent extends Agent {
 
                 if (bestOptions.length === 0) {
                     this.isPlanInExecution = false;
-                    // await this.explore();
+                    this.exploring = true;
+                    await this.explore();
+                    this.exploring = false;
                 } else {
                     console.log('BEFORE PLAINING');
                     let bestOption = bestOptions.shift();
@@ -100,8 +103,10 @@ export default class SingleAgent extends Agent {
 
                     if (planToReachParcel.length <= 0) {
                         this.isPlanInExecution = false;
+                        this.exploring = true;
                         console.log('NO PLAN');
-                        // await this.explore();
+                        await this.explore();
+                        this.exploring = false;
                     } else {
                         this.plans.push(planToReachParcel);
                         while (this.plans.length > 0) {
@@ -310,6 +315,11 @@ export default class SingleAgent extends Agent {
                 continue;
             }
         }
+    }
+
+    getRandomDirection(directions) {
+        let randomIndex = Math.floor(Math.random() * directions.length);
+        return directions[randomIndex];
     }
 
     getActionsFromPlan(plan) {
