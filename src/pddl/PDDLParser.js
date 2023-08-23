@@ -52,7 +52,7 @@ function addAgentsToBeliefSet(beliefs, agents) {
         return;
     }
 
-    for (const agent of agents) {
+    for (const agent of agents.values()) {
         beliefs.addObject(`agent_${agent.id}`);
     }
 }
@@ -103,7 +103,7 @@ function declareAgents(beliefsSet, agents) {
         return;
     }
 
-    for (const agent of agents) {
+    for (const agent of agents.values()) {
         beliefsSet.declare(`agent agent_${agent.id}`);
     }
 }
@@ -127,7 +127,7 @@ function specifyAgentsState(beliefsSet, agents) {
         return;
     }
 
-    for (const agent of agents) {
+    for (const agent of agents.values()) {
         beliefsSet.declare(
             `at agent_${agent.id} tile_${Math.round(agent.x)}-${Math.round(
                 agent.y
@@ -196,8 +196,10 @@ async function generatePlanWithPddl(parcels, agents, map, destinationTile, me) {
     await saveToFile(encodedProblem); // helps to see if the problem is correctly defined
 
     let plan = await onlineSolver(domain, encodedProblem);
+    console.log(`SHOW ME THE PLAN: ${plan}`);
 
     if (!plan) {
+        console.log('SHOW ME THE PLAN 2:');
         throw new Error('No plan found');
     }
 

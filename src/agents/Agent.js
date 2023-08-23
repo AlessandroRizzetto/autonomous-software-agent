@@ -30,7 +30,7 @@ export default class Agent {
     }
 
     async move(direction) {
-        await this.apiService.move(direction);
+        return await this.apiService.move(direction);
     }
 
     async putdown() {
@@ -38,7 +38,7 @@ export default class Agent {
     }
 
     async pickup() {
-        await this.apiService.pickup();
+        return await this.apiService.pickup();
     }
 
     async timer(ms) {
