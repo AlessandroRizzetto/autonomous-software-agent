@@ -13,7 +13,8 @@ export default class SingleAgent extends Agent {
         this.deliveryTiles = [];
         this.plans = [];
         this.isPlanInExecution = false;
-        this.isLastParcelsSensingEmpty = false;
+        this.isRoadOpen = false;
+        this.changeQuadrant = false;
         this.intetion_queue = new Array();
         // plans.push(new GoPickUp()); // building the plan library // not sure if this is the right way to do it
     }
@@ -56,10 +57,6 @@ export default class SingleAgent extends Agent {
                 y: me.y,
                 score: me.score,
             };
-
-            if (this.isLastParcelsSensingEmpty === true) {
-                await this.explore();
-            }
         });
     }
 
@@ -80,120 +77,10 @@ export default class SingleAgent extends Agent {
     // this method lists all the parcels that you can see
     onParcelsSensing() {
         this.apiService.onParcelsSensing(async (parcels) => {
-            if (parcels.length === 0) {
-                console.log('NO PARCELS');
-                this.isLastParcelsSensingEmpty = true;
-                await this.explore();
-                return;
-            }
-
-            if (this.isPlanInExecution === true) {
-                console.log('===WAITING===');
-                return;
-            }
-
-            this.isPlanInExecution = true;
+            console.log('PARCELS');
             this.visibleParcels.clear();
             for (const parcel of parcels) {
                 this.visibleParcels.set(parcel.id, parcel);
-            }
-
-            let bestOptions = this.getBestOptions();
-
-            if (bestOptions.length === 0) {
-                console.log('NO BEST OPTIONS');
-                console.log('BEFORE EXPLORING');
-                await this.explore();
-                console.log('AFTER EXPLORING');
-                this.isPlanInExecution = false;
-            } else {
-                console.log('BEFORE PLAINING');
-                let bestOption = bestOptions.shift();
-                let planToReachParcel = await this.generatePlan(
-                    bestOption,
-                    true
-                );
-                console.log('AFTER PLAINING');
-
-                if (planToReachParcel.length <= 0) {
-                    console.log('NO PLAN');
-                    console.log('BEFORE EXPLORING');
-                    await this.putdown();
-                    await this.explore();
-                    console.log('AFTER EXPLORING');
-                    this.isPlanInExecution = false;
-                } else {
-                    this.plans.push(planToReachParcel);
-                    while (this.plans.length > 0) {
-                        let planToReachParcel = this.plans.shift();
-                        try {
-                            console.log('EXECUTING PLAN TO REACH PARCEL');
-                            await this.executePlan(planToReachParcel);
-
-                            let planToReachDeliveryTile =
-                                await this.generatePlan(bestOption, false);
-                            if (planToReachDeliveryTile.length > 0) {
-                                console.log(
-                                    'EXECUTING PLAN TO REACH DELIVERY TILE'
-                                );
-                                await this.executePlan(planToReachDeliveryTile);
-                                this.isPlanInExecution = false;
-                            }
-                            break; // break the while loop to review the intentions after the execution of the plan
-                        } catch (error) {
-                            if (bestOptions.length !== 0) {
-                                let optionsForParcelDelivery =
-                                    this.getAllOptionsForParcelDelivery(
-                                        bestOptions,
-                                        bestOption
-                                    );
-
-                                for (const optionForParcelDelivery in optionsForParcelDelivery) {
-                                    try {
-                                        bestOption.deliveryTile.x =
-                                            optionForParcelDelivery.deliveryTile.x;
-                                        bestOption.deliveryTile.y =
-                                            optionForParcelDelivery.deliveryTile.y;
-                                        let planToReachDeliveryTile =
-                                            await this.generatePlan(
-                                                bestOption,
-                                                false
-                                            );
-                                        if (
-                                            planToReachDeliveryTile.length > 0
-                                        ) {
-                                            console.log(
-                                                'EXECUTING PLAN TO REACH DELIVERY TILE'
-                                            );
-                                            await this.executePlan(
-                                                planToReachDeliveryTile
-                                            );
-                                            this.isPlanInExecution = false;
-                                            break;
-                                        }
-                                    } catch (error) {
-                                        console.log(
-                                            'TRYING ANOTHER OPTION FOR DELIVERY'
-                                        );
-                                    }
-                                }
-                                bestOption = bestOptions.shift();
-                                console.log('GENERATING NEW PLAN');
-                                let plan = await this.generatePlan(
-                                    bestOption,
-                                    true
-                                );
-                                if (plan.length > 0) {
-                                    this.plans.push(plan);
-                                }
-                            }
-                        }
-                    }
-
-                    if (this.plans.length <= 0) {
-                        this.isPlanInExecution = false;
-                    }
-                }
             }
         });
     }
@@ -201,6 +88,7 @@ export default class SingleAgent extends Agent {
     onMap() {
         // the idea is to build a matrix with all the cells of the map assigning a type (to understand the type of) and a value (to understand how good it is to go there)
         this.apiService.onMap((width, height, cells) => {
+            console.log('MAP SENSING');
             this.map.width = width;
             this.map.height = height;
             this.map.cells = cells;
@@ -279,8 +167,150 @@ export default class SingleAgent extends Agent {
         return plan;
     }
 
-    play() {
-        // probably to be removed
+    async generateExplorationPlan(center) {
+        let plan = [];
+
+        let copyOfVisibleParcels = new Map(this.visibleParcels);
+        let copyOfVisibleAgents = new Map(this.visibleAgents);
+        let copyOfMe = { ...this.me };
+
+        try {
+            plan = await generatePlanWithPddl(
+                copyOfVisibleParcels,
+                copyOfVisibleAgents,
+                this.map,
+                {
+                    hasParcel: hasParcel,
+                    x: center.x,
+                    y: center.y,
+                    parcelId: null,
+                },
+                copyOfMe
+            );
+
+            return plan;
+        } catch (error) {
+            console.log('SOME ERROR');
+        }
+
+        return plan;
+    }
+
+    async play() {
+        while (true) {
+            console.log('PLAYING');
+            if (this.visibleParcels.size === 0) {
+                console.log('NO PARCELS');
+                await this.explore();
+            }
+
+            if (this.isPlanInExecution === true) {
+                console.log('===WAITING===');
+                return;
+            }
+
+            this.isPlanInExecution = true;
+
+            let bestOptions = this.getBestOptions();
+
+            if (bestOptions.length === 0) {
+                console.log('NO BEST OPTIONS');
+                console.log('BEFORE EXPLORING');
+                await this.explore();
+                console.log('AFTER EXPLORING');
+                this.isPlanInExecution = false;
+            } else {
+                console.log('BEFORE PLAINING');
+                let bestOption = bestOptions.shift();
+                let planToReachParcel = await this.generatePlan(
+                    bestOption,
+                    true
+                );
+                console.log('AFTER PLAINING');
+
+                if (planToReachParcel.length <= 0) {
+                    console.log('NO PLAN');
+                    console.log('BEFORE EXPLORING');
+                    // await this.putdown();
+                    await this.explore();
+                    console.log('AFTER EXPLORING');
+                    this.isPlanInExecution = false;
+                } else {
+                    this.plans.push(planToReachParcel);
+                    while (this.plans.length > 0) {
+                        let planToReachParcel = this.plans.shift();
+                        try {
+                            console.log('EXECUTING PLAN TO REACH PARCEL');
+                            await this.executePlan(planToReachParcel);
+
+                            let planToReachDeliveryTile =
+                                await this.generatePlan(bestOption, false);
+                            if (planToReachDeliveryTile.length > 0) {
+                                console.log(
+                                    'EXECUTING PLAN TO REACH DELIVERY TILE'
+                                );
+                                await this.executePlan(planToReachDeliveryTile);
+                                this.isPlanInExecution = false;
+                            }
+                            break; // break the while loop to review the intentions after the execution of the plan
+                        } catch (error) {
+                            if (bestOptions.length !== 0) {
+                                let optionsForParcelDelivery =
+                                    this.getAllOptionsForParcelDelivery(
+                                        bestOptions,
+                                        bestOption
+                                    );
+
+                                for (const optionForParcelDelivery in optionsForParcelDelivery) {
+                                    try {
+                                        bestOption.deliveryTile.x =
+                                            optionForParcelDelivery.deliveryTile.x;
+                                        bestOption.deliveryTile.y =
+                                            optionForParcelDelivery.deliveryTile.y;
+                                        let planToReachDeliveryTile =
+                                            await this.generatePlan(
+                                                bestOption,
+                                                false
+                                            );
+                                        if (
+                                            planToReachDeliveryTile.length > 0
+                                        ) {
+                                            console.log(
+                                                'EXECUTING PLAN TO REACH DELIVERY TILE'
+                                            );
+                                            await this.executePlan(
+                                                planToReachDeliveryTile
+                                            );
+                                            this.isPlanInExecution = false;
+                                            break;
+                                        }
+                                    } catch (error) {
+                                        console.log(
+                                            'TRYING ANOTHER OPTION FOR DELIVERY'
+                                        );
+                                    }
+                                }
+                                bestOption = bestOptions.shift();
+                                console.log('GENERATING NEW PLAN');
+                                let plan = await this.generatePlan(
+                                    bestOption,
+                                    true
+                                );
+                                if (plan.length > 0) {
+                                    this.plans.push(plan);
+                                }
+                            }
+                        }
+                    }
+
+                    if (this.plans.length <= 0) {
+                        this.isPlanInExecution = false;
+                    }
+                }
+            }
+
+            await new Promise((resolve) => setImmediate(resolve)); // wait for the next tick
+        }
     }
 
     async intentionLoop() {
@@ -330,115 +360,172 @@ export default class SingleAgent extends Agent {
     async explore() {
         // I am in a grid and I want to move from the four quadrants torwards the center I can do it by moving randomly in one of the four directions
 
-        if (this.isLastParcelsSensingEmpty === true) {
-            this.apiService.onParcelsSensing((parcels) => {
-                if (parcels.length !== 0) {
-                    this.isLastParcelsSensingEmpty = false;
-                }
-            });
+        console.log('Center Tile');
+        const centerTile = this.getCenterTile();
+
+        console.log('Exploration Tile');
+        const explorationTile = this.getExplorationTile(centerTile);
+
+        console.log('EXPLORATION GOAL', explorationTile);
+
+        let explorationPlan = await this.generateExplorationPlan(
+            explorationTile
+        );
+
+        console.log('Plan generated');
+
+        if (explorationPlan.length > 0) {
+            try {
+                await this.executePlan(explorationPlan);
+            } catch (error) {
+                console.log('EXPLORATION PLAN FAILED');
+                await this.exploreRandomly();
+            }
+        } else {
+            console.log('NO EXPLORATION PLAN');
+            await this.exploreRandomly();
         }
 
+        // let numberOfActions = Math.floor(this.map.width / 2);
+        // let myOriginalPos = { x: this.me.x, y: this.me.y };
+
+        // for (let i = 0; i < numberOfActions; i++) {
+        //     if (this.visibleParcels.size !== 0) {
+        //         return;
+        //     }
+
+        //     try {
+        //         let { x, y } = { x: this.me.x, y: this.me.y };
+
+        //         if (x <= this.map.width / 2 && y <= this.map.height / 2) {
+        //             // I am in the first quadrant
+        //             try {
+        //                 await this.move(
+        //                     this.getRandomDirection([
+        //                         this.PossibleActions.Up,
+        //                         this.PossibleActions.Right,
+        //                     ])
+        //                 );
+        //             } catch (error) {
+        //                 await this.move(
+        //                     this.getRandomDirection([
+        //                         this.PossibleActions.Up,
+        //                         this.PossibleActions.Right,
+        //                     ])
+        //                 );
+        //             }
+        //         } else if (x <= this.map.width / 2 && y > this.map.height / 2) {
+        //             // I am in the second quadrant
+        //             try {
+        //                 await this.move(
+        //                     this.getRandomDirection([
+        //                         this.PossibleActions.Down,
+        //                         this.PossibleActions.Right,
+        //                     ])
+        //                 );
+        //             } catch (error) {
+        //                 await this.move(
+        //                     this.getRandomDirection([
+        //                         this.PossibleActions.Down,
+        //                         this.PossibleActions.Right,
+        //                     ])
+        //                 );
+        //             }
+        //         } else if (x > this.map.width / 2 && y <= this.map.height / 2) {
+        //             // I am in the third quadrant
+        //             try {
+        //                 await this.move(
+        //                     this.getRandomDirection([
+        //                         this.PossibleActions.Up,
+        //                         this.PossibleActions.Left,
+        //                     ])
+        //                 );
+        //             } catch (error) {
+        //                 await this.move(
+        //                     this.getRandomDirection([
+        //                         this.PossibleActions.Up,
+        //                         this.PossibleActions.Left,
+        //                     ])
+        //                 );
+        //             }
+        //         } else if (x > this.map.width / 2 && y > this.map.height / 2) {
+        //             // I am in the fourth quadrant
+        //             try {
+        //                 await this.move(
+        //                     this.getRandomDirection([
+        //                         this.PossibleActions.Down,
+        //                         this.PossibleActions.Left,
+        //                     ])
+        //                 );
+        //             } catch (error) {
+        //                 await this.move(
+        //                     this.getRandomDirection([
+        //                         this.PossibleActions.Down,
+        //                         this.PossibleActions.Left,
+        //                     ])
+        //                 );
+        //             }
+        //         }
+        //     } catch (error) {
+        //         console.log('TRY SOME OTHER DIRECTION');
+        //     }
+        // }
+
+        // while (this.me.x === myOriginalPos.x && this.me.y === myOriginalPos.y) {
+        //     try {
+        //         console.log('TRY RANDOM DIRECTION');
+        //         await this.move(
+        //             this.getRandomDirection([
+        //                 this.PossibleActions.Up,
+        //                 this.PossibleActions.Right,
+        //                 this.PossibleActions.Down,
+        //                 this.PossibleActions.Left,
+        //             ])
+        //         );
+        //     } catch (error) {
+        //         console.log('TRY NEW RANDOM DIRECTION');
+        //     }
+        // }
+    }
+
+    async exploreRandomly() {
         let numberOfActions = Math.floor(this.map.width / 2);
-        let myOriginalPos = { x: this.me.x, y: this.me.y };
+        let direction = this.PossibleActions.Up;
 
         for (let i = 0; i < numberOfActions; i++) {
-            if (this.isLastParcelsSensingEmpty === false) {
-                this.onParcelsSensing();
+            console.log(`STEP ${i}`);
+            if (this.visibleParcels.size !== 0) {
                 return;
             }
-
+            if (this.isRoadOpen === false) {
+                direction = this.getRandomDirection([
+                    this.PossibleActions.Down,
+                    this.PossibleActions.Up,
+                    this.PossibleActions.Left,
+                    this.PossibleActions.Right,
+                ]);
+            }
             try {
-                let { x, y } = { x: this.me.x, y: this.me.y };
-
-                if (x <= this.map.width / 2 && y <= this.map.height / 2) {
-                    // I am in the first quadrant
-                    try {
-                        await this.move(
-                            this.getRandomDirection([
-                                this.PossibleActions.Up,
-                                this.PossibleActions.Right,
-                            ])
-                        );
-                    } catch (error) {
-                        await this.move(
-                            this.getRandomDirection([
-                                this.PossibleActions.Up,
-                                this.PossibleActions.Right,
-                            ])
-                        );
-                    }
-                } else if (x <= this.map.width / 2 && y > this.map.height / 2) {
-                    // I am in the second quadrant
-                    try {
-                        await this.move(
-                            this.getRandomDirection([
-                                this.PossibleActions.Down,
-                                this.PossibleActions.Right,
-                            ])
-                        );
-                    } catch (error) {
-                        await this.move(
-                            this.getRandomDirection([
-                                this.PossibleActions.Down,
-                                this.PossibleActions.Right,
-                            ])
-                        );
-                    }
-                } else if (x > this.map.width / 2 && y <= this.map.height / 2) {
-                    // I am in the third quadrant
-                    try {
-                        await this.move(
-                            this.getRandomDirection([
-                                this.PossibleActions.Up,
-                                this.PossibleActions.Left,
-                            ])
-                        );
-                    } catch (error) {
-                        await this.move(
-                            this.getRandomDirection([
-                                this.PossibleActions.Up,
-                                this.PossibleActions.Left,
-                            ])
-                        );
-                    }
-                } else if (x > this.map.width / 2 && y > this.map.height / 2) {
-                    // I am in the fourth quadrant
-                    try {
-                        await this.move(
-                            this.getRandomDirection([
-                                this.PossibleActions.Down,
-                                this.PossibleActions.Left,
-                            ])
-                        );
-                    } catch (error) {
-                        await this.move(
-                            this.getRandomDirection([
-                                this.PossibleActions.Down,
-                                this.PossibleActions.Left,
-                            ])
-                        );
-                    }
+                let result = await this.move(direction);
+                if (result !== false) {
+                    this.isRoadOpen = true;
+                } else {
+                    this.isRoadOpen = false;
                 }
             } catch (error) {
-                console.log('TRY SOME OTHER DIRECTION');
+                direction = this.getRandomDirection(
+                    [
+                        this.PossibleActions.Down,
+                        this.PossibleActions.Up,
+                        this.PossibleActions.Left,
+                        this.PossibleActions.Right,
+                    ].filter((newDirection) => newDirection !== direction)
+                );
             }
         }
 
-        while (this.me.x === myOriginalPos.x && this.me.y === myOriginalPos.y) {
-            try {
-                console.log('TRY RANDOM DIRECTION');
-                await this.move(
-                    this.getRandomDirection([
-                        this.PossibleActions.Up,
-                        this.PossibleActions.Right,
-                        this.PossibleActions.Down,
-                        this.PossibleActions.Left,
-                    ])
-                );
-            } catch (error) {
-                console.log('TRY NEW RANDOM DIRECTION');
-            }
-        }
+        this.changeQuadrant = true;
+        this.isRoadOpen = false;
     }
 
     getRandomDirection(directions) {
@@ -468,6 +555,118 @@ export default class SingleAgent extends Agent {
         });
 
         return optionsForParcelDelivery;
+    }
+
+    getCenterTile() {
+        const { x, y } = { x: this.me.x, y: this.me.y };
+        console.log('Calculating center tile');
+        console.log('map width', this.map.width);
+        console.log('map height', this.map.height);
+        const quadrants = ['11', '12', '21', '22'];
+        const centerTile = {};
+
+        const quadrantX = x <= this.map.width / 2 ? 1 : 2;
+        const quadrantY = y <= this.map.height / 2 ? 1 : 2;
+
+        let defaultQuadrant = `${quadrantX}${quadrantY}`;
+
+        if (this.changeQuadrant === true) {
+            const otherQuadrants = quadrants.filter(
+                (quadrant) => quadrant !== defaultQuadrant
+            );
+
+            defaultQuadrant =
+                otherQuadrants[
+                    Math.floor(Math.random() * otherQuadrants.length)
+                ];
+
+            this.changeQuadrant = false;
+        }
+
+        switch (defaultQuadrant) {
+            case '11':
+                centerTile.x = Math.round(this.map.width / 4);
+                centerTile.y = Math.round(this.map.height / 4);
+                console.log('centerTile', centerTile);
+
+                break;
+            case '12':
+                centerTile.x = Math.round(this.map.width / 4);
+                centerTile.y = Math.round((this.map.height / 3) * 2);
+                console.log('centerTile', centerTile);
+
+                break;
+            case '21':
+                centerTile.x = Math.round((this.map.width / 3) * 2);
+                centerTile.y = Math.round(this.map.height / 4);
+                console.log('centerTile', centerTile);
+
+                break;
+            case '22':
+                centerTile.x = Math.round((this.map.width / 3) * 2);
+                centerTile.y = Math.round((this.map.height / 3) * 2);
+                console.log('centerTile', centerTile);
+
+                break;
+            default:
+                return;
+        }
+
+        console.log('centerTile', centerTile);
+        return centerTile;
+    }
+
+    getExplorationTile(centerTile) {
+        console.log('centerTile', centerTile);
+        let foundGoodCell = false;
+        let radious = 1;
+        let explorationTile = {};
+
+        // while (foundGoodCell === false) {
+        // console.log('radious', radious);
+        const adjacentCells = [
+            { x: centerTile.x - radious, y: centerTile.y },
+            { x: centerTile.x + radious, y: centerTile.y },
+            { x: centerTile.x, y: centerTile.y - radious },
+            { x: centerTile.x, y: centerTile.y + radious },
+            {
+                x: centerTile.x - radious,
+                y: centerTile.y - radious,
+            },
+            {
+                x: centerTile.x - radious,
+                y: centerTile.y + radious,
+            },
+            {
+                x: centerTile.x + radious,
+                y: centerTile.y - radious,
+            },
+            {
+                x: centerTile.x + radious,
+                y: centerTile.y + radious,
+            },
+        ];
+
+        for (let i = 0; i < adjacentCells.length && !foundGoodCell; i++) {
+            if (
+                adjacentCells[i].x >= 0 &&
+                adjacentCells[i].x < this.map.width &&
+                adjacentCells[i].y >= 0 &&
+                adjacentCells[i].y < this.map.height &&
+                this.map.matrix[adjacentCells[i].x][adjacentCells[i].y].type !==
+                    'wall'
+            ) {
+                explorationTile = {
+                    x: adjacentCells[i].x,
+                    y: adjacentCells[i].y,
+                };
+                foundGoodCell = true;
+            }
+        }
+        // radious++;
+        // }
+
+        return explorationTile;
     }
 
     getBestOptions() {

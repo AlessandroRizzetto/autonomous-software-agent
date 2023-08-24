@@ -148,8 +148,12 @@ function specifyGoal(destinationTile, me) {
         goal = `carriedBy parcel_${destinationTile.parcelId} me_${me.id}`;
     } else {
         goal = `and (at me_${me.id} tile_${destinationTile.x}-${destinationTile.y})`;
-        goal += ` (at parcel_${destinationTile.parcelId} tile_${destinationTile.x}-${destinationTile.y})`;
-        goal += ` (not (carriedBy parcel_${destinationTile.parcelId} me_${me.id}))`;
+        // goal += ` (at parcel_${destinationTile.parcelId} tile_${destinationTile.x}-${destinationTile.y})`;
+        // goal += ` (not (carriedBy parcel_${destinationTile.parcelId} me_${me.id}))`;
+        if (destinationTile.parcelId !== null) {
+            goal += ` (at parcel_${destinationTile.parcelId} tile_${destinationTile.x}-${destinationTile.y})`;
+            goal += ` (not (carriedBy parcel_${destinationTile.parcelId} me_${me.id}))`;
+        }
     }
 
     return goal;
