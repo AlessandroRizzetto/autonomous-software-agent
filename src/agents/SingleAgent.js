@@ -180,7 +180,7 @@ export default class SingleAgent extends Agent {
                 copyOfVisibleAgents,
                 this.map,
                 {
-                    hasParcel: hasParcel,
+                    hasParcel: false,
                     x: center.x,
                     y: center.y,
                     parcelId: null,
@@ -343,6 +343,11 @@ export default class SingleAgent extends Agent {
         let actions = this.getActionsFromPlan(plan);
         console.log('actions', actions);
         for (const action of actions) {
+            for (const parcel of this.visibleParcels.values()) {
+                if (parcel.x === this.me.x && parcel.y === this.me.y) {
+                    await this.pickup();
+                }
+            }
             if (action === this.PossibleActions.Pickup) {
                 let pickedParcels = await this.pickup();
                 console.log(`PICKED ${pickedParcels.length} PARCELS`);
