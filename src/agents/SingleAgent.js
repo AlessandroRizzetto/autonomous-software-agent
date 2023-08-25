@@ -1,6 +1,5 @@
 import Agent from './Agent.js';
 import { generatePlanWithPddl } from '../pddl/PDDLParser.js';
-// import GoPickUp from '../models/GoPickUp.js';
 
 export default class SingleAgent extends Agent {
     constructor(options) {
@@ -12,9 +11,9 @@ export default class SingleAgent extends Agent {
         this.visibleParcels = new Map();
         this.deliveryTiles = [];
         this.plans = [];
-        this.goodPlans = {};
-        this.badPlans = {};
-        this.isPlanInExecution = false;
+        this.planLibrary = new Map();
+        this.parcelsCarriedNow = new Map();
+        this.nearByParcels = new Map();
         this.isRoadOpen = false;
         this.changeQuadrant = false;
         this.intetion_queue = new Array();
@@ -54,8 +53,8 @@ export default class SingleAgent extends Agent {
             this.me = {
                 id: me.id,
                 name: me.name,
-                x: me.x,
-                y: me.y,
+                x: Math.round(me.x),
+                y: Math.round(me.y),
                 score: me.score,
             };
         });
@@ -64,10 +63,8 @@ export default class SingleAgent extends Agent {
     // this method lists all the agents that you can see
     onAgentsSensing() {
         this.apiService.onAgentsSensing((agents) => {
-            //console.log('agents', agents);
             this.visibleAgents.clear();
             for (const agent of agents) {
-                // round the coordinates to avoid floating point positions
                 agent.x = Math.round(agent.x);
                 agent.y = Math.round(agent.y);
                 this.visibleAgents.set(agent.id, agent);
@@ -77,12 +74,10 @@ export default class SingleAgent extends Agent {
 
     // this method lists all the parcels that you can see
     onParcelsSensing() {
-        this.apiService.onParcelsSensing(async (parcels) => {
-            //console.log('PARCELS');
+        this.apiService.onParcelsSensing((parcels) => {
             this.visibleParcels.clear();
             for (const parcel of parcels) {
                 this.visibleParcels.set(parcel.id, parcel);
-                //console.log('PARCEL', parcel);
             }
         });
     }
@@ -136,36 +131,25 @@ export default class SingleAgent extends Agent {
         // });
     }
 
-    /**
-     * BDI loop
-     */
-
     async generatePlan(option, hasParcel) {
         let plan = [];
 
         let copyOfVisibleParcels = new Map(this.visibleParcels);
         let copyOfVisibleAgents = new Map(this.visibleAgents);
         let copyOfMe = { ...this.me };
+
         // save the planInfo in different way if i have a parcel or not
         const goal = {
             x: hasParcel ? option.parcel.x : option.deliveryTile.x,
             y: hasParcel ? option.parcel.y : option.deliveryTile.y,
         };
-        const planInfo =
-            this.me.x +
-            ',' +
-            this.me.y +
-            ',' +
-            goal.x +
-            ',' +
-            goal.y +
-            ',' +
-            hasParcel;
-        if (this.goodPlans[planInfo]) {
+        const planInfo = `${this.me.x},${this.me.y},${goal.x},${goal.y},${hasParcel}`;
+
+        if (this.planLibrary.has(planInfo)) {
             console.log('USING PLAN ALREADY GENERATED');
-            return this.goodPlans[planInfo];
+            return this.planLibrary.get(planInfo);
         }
-        //console.log('planInfo', planInfo);
+
         try {
             plan = await generatePlanWithPddl(
                 copyOfVisibleParcels,
@@ -179,7 +163,7 @@ export default class SingleAgent extends Agent {
                 },
                 copyOfMe
             );
-            this.goodPlans[planInfo] = plan;
+            this.planLibrary.set(planInfo, plan);
             return plan;
         } catch (error) {
             console.log('ERROR GENERATING THE PLAN');
@@ -188,25 +172,20 @@ export default class SingleAgent extends Agent {
         return plan;
     }
 
-    async generateExplorationPlan(center, hasParcel) {
+    async generateExplorationPlan(center) {
         let plan = [];
 
         let copyOfVisibleParcels = new Map(this.visibleParcels);
         let copyOfVisibleAgents = new Map(this.visibleAgents);
         let copyOfMe = { ...this.me };
-        const planInfo =
-            this.me.x +
-            ',' +
-            this.me.y +
-            ',' +
-            center.x +
-            ',' +
-            center.y +
-            ',' +
-            hasParcel;
-        if (this.goodPlans[planInfo]) {
+
+        const planInfo = `${this.me.x},${this.me.y},${center.x},${
+            center.y
+        },${false}`;
+
+        if (this.planLibrary.has(planInfo)) {
             console.log('USING PLAN ALREADY GENERATED');
-            return this.goodPlans[planInfo];
+            return this.planLibrary.get(planInfo);
         } else {
             try {
                 plan = await generatePlanWithPddl(
@@ -221,7 +200,7 @@ export default class SingleAgent extends Agent {
                     },
                     copyOfMe
                 );
-                this.goodPlans[planInfo] = plan;
+                this.planLibrary.set(planInfo, plan);
                 return plan;
             } catch (error) {
                 console.log('ERROR GENERATING THE PLAN TO REACH THE CENTER');
@@ -233,104 +212,114 @@ export default class SingleAgent extends Agent {
 
     async executePlan(plan) {
         let actions = this.getActionsFromPlan(plan);
-        console.log('actions', actions);
+        console.log('ACTIONS', actions);
         for (const action of actions) {
+            this.nearByParcels = await this.getNearbyParcels();
+            // if (this.nearByParcels.size > 0) {
+            //     console.log('NEARBY PARCELS', this.nearByParcels);
+            //     // throw new Error('NEARBY_PARCELS');
+            //     reject(new Error('NEARBY_PARCELS'));
+            // }
+
             if (action === this.PossibleActions.Pickup) {
                 let pickedParcels = await this.pickup();
                 console.log(`PICKED ${pickedParcels.length} PARCELS`);
+                console.log('PICKED PARCELS', pickedParcels);
+                for (const pickedParcel of pickedParcels) {
+                    this.parcelsCarriedNow.set(pickedParcel.id, {
+                        id: pickedParcel.id,
+                        x: pickedParcel.x,
+                        y: pickedParcel.y,
+                        carriedBy: this.me.id,
+                        reward: pickedParcel.reward,
+                    });
+                }
             } else if (action === this.PossibleActions.Putdown) {
-                await this.putdown();
+                let droppedParcels = await this.putdown();
+                console.log(`DROPPED ${droppedParcels.length} PARCELS`);
+                console.log('DROPPED PARCELS', droppedParcels);
+                for (const droppedParcel of droppedParcels) {
+                    this.parcelsCarriedNow.delete(droppedParcel.id);
+                }
             } else {
                 let result = await this.move(action);
                 if (result === false) {
-                    throw new Error('MOVE FAILED');
+                    throw new Error('MOVE_FAILED');
                 }
             }
-            // for (const parcel of this.visibleParcels.values()) {
-            //     if (
-            //         Math.round(this.me.x) === Math.round(parcel.x) &&
-            //         Math.round(this.me.y) === Math.round(parcel.y)
-            //         // parcel.carriedBy !== this.me.id
-            //     ) {
-            //         await this.pickup();
-            //         console.log('PICKED PARCEL');
-            //     }
-            // }
         }
     }
 
     async play() {
         while (true) {
-            console.log('PLAYING');
-            if (this.visibleParcels.size === 0) {
+            while (this.visibleParcels.size === 0) {
                 console.log('NO PARCELS');
                 await this.explore();
             }
 
-            if (this.isPlanInExecution === true) {
-                console.log('===WAITING===');
-                return;
-            }
+            let bestOptions = this.getBestOptions(this.visibleParcels);
 
-            this.isPlanInExecution = true;
+            let bestOption = bestOptions.shift();
 
-            let bestOptions = this.getBestOptions();
+            let planToReachParcel = await this.generatePlan(bestOption, true);
 
-            if (bestOptions.length === 0) {
-                console.log('NO BEST OPTIONS');
-                console.log('BEFORE EXPLORING');
+            if (planToReachParcel.length <= 0) {
+                console.log('NO PLAN');
                 await this.explore();
-                console.log('AFTER EXPLORING');
-                this.isPlanInExecution = false;
             } else {
-                console.log('BEFORE PLAINING');
-                let bestOption = bestOptions.shift();
+                this.plans.push(planToReachParcel);
+                while (this.plans.length > 0) {
+                    let planToReachParcel = this.plans.shift();
+                    try {
+                        console.log('EXECUTING PLAN TO REACH PARCEL');
+                        await this.executePlan(planToReachParcel);
 
-                let planToReachParcel = await this.generatePlan(
-                    bestOption,
-                    true
-                );
-                console.log('AFTER PLAINING');
-
-                if (planToReachParcel.length <= 0) {
-                    console.log('NO PLAN');
-                    console.log('BEFORE EXPLORING');
-                    // await this.putdown();
-                    await this.explore();
-                    console.log('AFTER EXPLORING');
-                    this.isPlanInExecution = false;
-                } else {
-                    this.plans.push(planToReachParcel);
-                    while (this.plans.length > 0) {
-                        let planToReachParcel = this.plans.shift();
-                        try {
-                            console.log('EXECUTING PLAN TO REACH PARCEL');
-                            await this.executePlan(planToReachParcel);
-
-                            let planToReachDeliveryTile =
-                                await this.generatePlan(bestOption, false);
-                            if (planToReachDeliveryTile.length > 0) {
-                                console.log(
-                                    'EXECUTING PLAN TO REACH DELIVERY TILE'
-                                );
-                                await this.executePlan(planToReachDeliveryTile);
-                                this.isPlanInExecution = false;
-                            }
-                            break; // break the while loop to review the intentions after the execution of the plan
-                        } catch (error) {
-                            if (bestOptions.length !== 0) {
-                                let optionsForParcelDelivery =
-                                    this.getAllOptionsForParcelDelivery(
-                                        bestOptions,
-                                        bestOption
+                        let planToReachDeliveryTile = await this.generatePlan(
+                            bestOption,
+                            false
+                        );
+                        if (planToReachDeliveryTile.length > 0) {
+                            console.log(
+                                'EXECUTING PLAN TO REACH DELIVERY TILE'
+                            );
+                            await this.executePlan(planToReachDeliveryTile);
+                        }
+                    } catch (error) {
+                        if (error.message === 'NEARBY_PARCELS') {
+                            let newOptions = this.getBestOptions(
+                                this.nearByParcels
+                            );
+                            for (const newOption of newOptions) {
+                                bestOptions = bestOptions.filter((option) => {
+                                    return (
+                                        option.parcel.id !== newOption.parcel.id
                                     );
-
-                                for (const optionForParcelDelivery in optionsForParcelDelivery) {
-                                    try {
+                                });
+                            }
+                            bestOptions.unshift(...newOptions);
+                            console.log('TRYING TO PICK UP ANOTHER PARCEL');
+                            bestOption = bestOptions.shift();
+                            let plan = await this.generatePlan(
+                                bestOption,
+                                true
+                            );
+                            if (plan.length > 0) {
+                                this.plans.push(plan);
+                            }
+                        } else if (error.message === 'MOVE_FAILED') {
+                            if (bestOptions.length !== 0) {
+                                let otherOptions =
+                                    this.getAllOtherOptionsForSameParcel(
+                                        bestOptions,
+                                        bestOption.parcel.id
+                                    );
+                                if (otherOptions.length !== 0) {
+                                    for (const otherOption of otherOptions) {
+                                        // try {
                                         bestOption.deliveryTile.x =
-                                            optionForParcelDelivery.deliveryTile.x;
+                                            otherOption.deliveryTile.x;
                                         bestOption.deliveryTile.y =
-                                            optionForParcelDelivery.deliveryTile.y;
+                                            otherOption.deliveryTile.y;
                                         let planToReachDeliveryTile =
                                             await this.generatePlan(
                                                 bestOption,
@@ -339,36 +328,36 @@ export default class SingleAgent extends Agent {
                                         if (
                                             planToReachDeliveryTile.length > 0
                                         ) {
-                                            console.log(
-                                                'EXECUTING PLAN TO REACH DELIVERY TILE'
-                                            );
-                                            await this.executePlan(
+                                            // console.log(
+                                            //     'EXECUTING PLAN TO REACH DELIVERY TILE'
+                                            // );
+                                            // await this.executePlan(
+                                            //     planToReachDeliveryTile
+                                            // );
+                                            console.log('ADDING PLAN TO QUEUE');
+                                            this.plans.push(
                                                 planToReachDeliveryTile
                                             );
-                                            this.isPlanInExecution = false;
-                                            break;
                                         }
-                                    } catch (error) {
-                                        console.log(
-                                            'TRYING ANOTHER OPTION FOR DELIVERY'
-                                        );
+                                        // } catch (error) {
+                                        //     console.log(
+                                        //         'TRYING ANOTHER OPTION FOR PARCEL DELIVERY'
+                                        //     );
+                                        // }
                                     }
-                                }
-                                bestOption = bestOptions.shift();
-                                console.log('GENERATING NEW PLAN');
-                                let plan = await this.generatePlan(
-                                    bestOption,
-                                    true
-                                );
-                                if (plan.length > 0) {
-                                    this.plans.push(plan);
+                                } else {
+                                    bestOption = bestOptions.shift();
+                                    console.log('GENERATING NEW PLAN');
+                                    let plan = await this.generatePlan(
+                                        bestOption,
+                                        true
+                                    );
+                                    if (plan.length > 0) {
+                                        this.plans.push(plan);
+                                    }
                                 }
                             }
                         }
-                    }
-
-                    if (this.plans.length <= 0) {
-                        this.isPlanInExecution = false;
                     }
                 }
             }
@@ -404,22 +393,17 @@ export default class SingleAgent extends Agent {
     }
 
     async explore() {
-        // I am in a grid and I want to move from the four quadrants torwards the center I can do it by moving randomly in one of the four directions
+        const centerTile = await this.getCenterTile();
 
-        //console.log('Center Tile');
-        const centerTile = this.getCenterTile();
-
-        //console.log('Exploration Tile');
-        const explorationTile = this.getExplorationTile(centerTile);
+        const explorationTile = await this.getExplorationTile(centerTile);
 
         console.log('EXPLORATION GOAL', explorationTile);
 
         let explorationPlan = await this.generateExplorationPlan(
-            explorationTile,
-            false
+            explorationTile
         );
 
-        console.log('Plan generated');
+        console.log('EXPLORATION PLAN GENERATED');
 
         if (explorationPlan.length > 0) {
             try {
@@ -489,9 +473,9 @@ export default class SingleAgent extends Agent {
         return actions;
     }
 
-    getAllOptionsForParcelDelivery(options, currentOption) {
+    getAllOtherOptionsForSameParcel(options, parcelId) {
         let optionsForParcelDelivery = options.filter((option) => {
-            return option.parcel.id === currentOption.parcel.id;
+            return option.parcel.id === parcelId;
         });
 
         optionsForParcelDelivery.sort((a, b) => {
@@ -504,156 +488,153 @@ export default class SingleAgent extends Agent {
         return optionsForParcelDelivery;
     }
 
-    getCenterTile() {
-        const { x, y } = { x: this.me.x, y: this.me.y };
-        //console.log('Calculating center tile');
-        //console.log('map width', this.map.width);
-        //console.log('map height', this.map.height);
-        const quadrants = ['11', '12', '21', '22'];
-        const centerTile = {};
+    async getCenterTile() {
+        return new Promise((resolve) => {
+            const { x, y } = { x: this.me.x, y: this.me.y };
+            //console.log('Calculating center tile');
+            //console.log('map width', this.map.width);
+            //console.log('map height', this.map.height);
+            const quadrants = ['11', '12', '21', '22'];
+            const centerTile = {};
 
-        const quadrantX = x <= this.map.width / 2 ? 1 : 2;
-        const quadrantY = y <= this.map.height / 2 ? 1 : 2;
+            const quadrantX = x <= this.map.width / 2 ? 1 : 2;
+            const quadrantY = y <= this.map.height / 2 ? 1 : 2;
 
-        let defaultQuadrant = `${quadrantX}${quadrantY}`;
+            let defaultQuadrant = `${quadrantX}${quadrantY}`;
 
-        if (this.changeQuadrant === true) {
-            const otherQuadrants = quadrants.filter(
-                (quadrant) => quadrant !== defaultQuadrant
-            );
+            if (this.changeQuadrant === true) {
+                const otherQuadrants = quadrants.filter(
+                    (quadrant) => quadrant !== defaultQuadrant
+                );
 
-            defaultQuadrant =
-                otherQuadrants[
-                    Math.floor(Math.random() * otherQuadrants.length)
-                ];
+                defaultQuadrant =
+                    otherQuadrants[
+                        Math.floor(Math.random() * otherQuadrants.length)
+                    ];
 
-            this.changeQuadrant = false;
-        }
-
-        switch (defaultQuadrant) {
-            case '11':
-                centerTile.x = Math.round(this.map.width / 4);
-                centerTile.y = Math.round(this.map.height / 4);
-                console.log('centerTile', centerTile);
-
-                break;
-            case '12':
-                centerTile.x = Math.round(this.map.width / 4);
-                centerTile.y = Math.round((this.map.height / 3) * 2);
-                console.log('centerTile', centerTile);
-
-                break;
-            case '21':
-                centerTile.x = Math.round((this.map.width / 3) * 2);
-                centerTile.y = Math.round(this.map.height / 4);
-                console.log('centerTile', centerTile);
-
-                break;
-            case '22':
-                centerTile.x = Math.round((this.map.width / 3) * 2);
-                centerTile.y = Math.round((this.map.height / 3) * 2);
-                console.log('centerTile', centerTile);
-
-                break;
-            default:
-                return;
-        }
-
-        //console.log('centerTile', centerTile);
-        return centerTile;
-    }
-
-    getExplorationTile(centerTile) {
-        //console.log('centerTile', centerTile);
-        let foundGoodCell = false;
-        let radious = 1;
-        let explorationTile = {};
-
-        // while (foundGoodCell === false) {
-        // console.log('radious', radious);
-        const adjacentCells = [
-            { x: centerTile.x - radious, y: centerTile.y },
-            { x: centerTile.x + radious, y: centerTile.y },
-            { x: centerTile.x, y: centerTile.y - radious },
-            { x: centerTile.x, y: centerTile.y + radious },
-            {
-                x: centerTile.x - radious,
-                y: centerTile.y - radious,
-            },
-            {
-                x: centerTile.x - radious,
-                y: centerTile.y + radious,
-            },
-            {
-                x: centerTile.x + radious,
-                y: centerTile.y - radious,
-            },
-            {
-                x: centerTile.x + radious,
-                y: centerTile.y + radious,
-            },
-        ];
-
-        for (let i = 0; i < adjacentCells.length && !foundGoodCell; i++) {
-            if (
-                adjacentCells[i].x >= 0 &&
-                adjacentCells[i].x < this.map.width &&
-                adjacentCells[i].y >= 0 &&
-                adjacentCells[i].y < this.map.height &&
-                this.map.matrix[adjacentCells[i].x][adjacentCells[i].y].type !==
-                    'wall'
-            ) {
-                explorationTile = {
-                    x: adjacentCells[i].x,
-                    y: adjacentCells[i].y,
-                };
-                foundGoodCell = true;
+                this.changeQuadrant = false;
             }
-        }
-        // radious++;
-        // }
 
-        return explorationTile;
+            switch (defaultQuadrant) {
+                case '11':
+                    centerTile.x = Math.round(this.map.width / 4);
+                    centerTile.y = Math.round(this.map.height / 4);
+                    console.log('centerTile', centerTile);
+
+                    break;
+                case '12':
+                    centerTile.x = Math.round(this.map.width / 4);
+                    centerTile.y = Math.round((this.map.height / 3) * 2);
+                    console.log('centerTile', centerTile);
+
+                    break;
+                case '21':
+                    centerTile.x = Math.round((this.map.width / 3) * 2);
+                    centerTile.y = Math.round(this.map.height / 4);
+                    console.log('centerTile', centerTile);
+
+                    break;
+                case '22':
+                    centerTile.x = Math.round((this.map.width / 3) * 2);
+                    centerTile.y = Math.round((this.map.height / 3) * 2);
+                    console.log('centerTile', centerTile);
+
+                    break;
+                default:
+                    return;
+            }
+
+            resolve(centerTile);
+        });
     }
 
-    getBestOptions() {
+    async getExplorationTile(centerTile) {
+        return new Promise((resolve) => {
+            let foundGoodCell = false;
+            let radious = 1;
+            let explorationTile = {};
+
+            // while (foundGoodCell === false) {
+            // console.log('radious', radious);
+            const adjacentCells = [
+                { x: centerTile.x - radious, y: centerTile.y },
+                { x: centerTile.x + radious, y: centerTile.y },
+                { x: centerTile.x, y: centerTile.y - radious },
+                { x: centerTile.x, y: centerTile.y + radious },
+                {
+                    x: centerTile.x - radious,
+                    y: centerTile.y - radious,
+                },
+                {
+                    x: centerTile.x - radious,
+                    y: centerTile.y + radious,
+                },
+                {
+                    x: centerTile.x + radious,
+                    y: centerTile.y - radious,
+                },
+                {
+                    x: centerTile.x + radious,
+                    y: centerTile.y + radious,
+                },
+            ];
+
+            for (let i = 0; i < adjacentCells.length && !foundGoodCell; i++) {
+                if (
+                    adjacentCells[i].x >= 0 &&
+                    adjacentCells[i].x < this.map.width &&
+                    adjacentCells[i].y >= 0 &&
+                    adjacentCells[i].y < this.map.height &&
+                    this.map.matrix[adjacentCells[i].x][adjacentCells[i].y]
+                        .type !== 'wall'
+                ) {
+                    explorationTile = {
+                        x: adjacentCells[i].x,
+                        y: adjacentCells[i].y,
+                    };
+                    foundGoodCell = true;
+                }
+            }
+            // radious++;
+            // }
+
+            resolve(explorationTile);
+        });
+    }
+
+    getBestOptions(parcels) {
         let options = [];
         let parcelDecadingInterval = this.config.PARCEL_DECADING_INTERVAL;
         let agentMovementDuration = this.config.MOVEMENT_DURATION;
         let agentVelocity = 1 / agentMovementDuration;
-        for (const parcel of this.visibleParcels.values()) {
+        for (const parcel of parcels.values()) {
             if (!parcel.carriedBy || this.me.id === parcel.carriedBy) {
                 for (const deliveryTile of this.deliveryTiles) {
-                    let shortestAgentDistanceToParcel = Number.MAX_VALUE;
                     const distanceFromMeToParcel = this.distance(
                         { x: this.me.x, y: this.me.y },
                         parcel
                     );
-                    if (
-                        distanceFromMeToParcel < shortestAgentDistanceToParcel
-                    ) {
-                        const distanceFromParceltoDeliveryTile = this.distance(
-                            parcel,
-                            deliveryTile
-                        );
-                        const totalDistance =
-                            distanceFromMeToParcel +
-                            distanceFromParceltoDeliveryTile;
-                        const timeToDeliverParcel =
-                            totalDistance / agentVelocity;
-                        let parcelRemainingReward = parcel.reward;
-                        if (parcelDecadingInterval !== 0) {
-                            const parcelLostReward =
-                                timeToDeliverParcel / parcelDecadingInterval;
-                            parcelRemainingReward =
-                                parcel.reward - parcelLostReward;
-                        }
-                        options.push({
-                            parcel,
-                            deliveryTile,
-                            parcelRemainingReward,
-                        });
+
+                    const distanceFromParceltoDeliveryTile = this.distance(
+                        parcel,
+                        deliveryTile
+                    );
+                    const totalDistance =
+                        distanceFromMeToParcel +
+                        distanceFromParceltoDeliveryTile;
+                    const timeToDeliverParcel = totalDistance / agentVelocity;
+                    let parcelRemainingReward = parcel.reward;
+                    if (parcelDecadingInterval !== 0) {
+                        const parcelLostReward =
+                            timeToDeliverParcel / parcelDecadingInterval;
+                        parcelRemainingReward =
+                            parcel.reward - parcelLostReward;
                     }
+                    options.push({
+                        parcel,
+                        deliveryTile,
+                        parcelRemainingReward,
+                    });
                 }
             }
         }
@@ -681,5 +662,83 @@ export default class SingleAgent extends Agent {
             );
         });
         return options;
+    }
+
+    updateRemainingRewardPerCarriedParcel() {}
+
+    async getNearbyParcels() {
+        return new Promise(async (resolve) => {
+            let nearByTiles = await this.getNearbyTiles();
+            let nearByParcels = new Map();
+            let minReward = 3;
+            for (const parcel of this.visibleParcels.values()) {
+                if (
+                    !parcel.carriedBy ||
+                    !this.parcelsCarriedNow.has(parcel.id)
+                ) {
+                    for (const tile of nearByTiles) {
+                        if (
+                            Math.round(parcel.x) === tile.x &&
+                            Math.round(parcel.y) === tile.y &&
+                            parcel.reward > minReward
+                        ) {
+                            nearByParcels.set(parcel.id, parcel);
+                        }
+                    }
+                }
+            }
+            console.log('NEARBY PARCELS', nearByParcels);
+            resolve(nearByParcels);
+        });
+    }
+
+    async getNearbyTiles() {
+        return new Promise((resolve) => {
+            let maxDistance = 2;
+            let nearByTiles = [];
+
+            for (let i = 1; i <= maxDistance; i++) {
+                const adjacentCells = [
+                    { x: this.me.x - i, y: this.me.y },
+                    { x: this.me.x + i, y: this.me.y },
+                    { x: this.me.x, y: this.me.y - i },
+                    { x: this.me.x, y: this.me.y + i },
+                    {
+                        x: this.me.x - i,
+                        y: this.me.y - i,
+                    },
+                    {
+                        x: this.me.x - i,
+                        y: this.me.y + i,
+                    },
+                    {
+                        x: this.me.x + i,
+                        y: this.me.y - i,
+                    },
+                    {
+                        x: this.me.x + i,
+                        y: this.me.y + i,
+                    },
+                ];
+
+                for (let i = 0; i < adjacentCells.length; i++) {
+                    if (
+                        adjacentCells[i].x >= 0 &&
+                        adjacentCells[i].x < this.map.width &&
+                        adjacentCells[i].y >= 0 &&
+                        adjacentCells[i].y < this.map.height &&
+                        this.map.matrix[adjacentCells[i].x][adjacentCells[i].y]
+                            .type !== 'wall'
+                    ) {
+                        nearByTiles.push({
+                            x: adjacentCells[i].x,
+                            y: adjacentCells[i].y,
+                        });
+                    }
+                }
+            }
+
+            resolve(nearByTiles);
+        });
     }
 }

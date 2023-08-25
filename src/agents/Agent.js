@@ -34,7 +34,7 @@ export default class Agent {
     }
 
     async putdown() {
-        await this.apiService.putdown();
+        return await this.apiService.putdown();
     }
 
     async pickup() {
