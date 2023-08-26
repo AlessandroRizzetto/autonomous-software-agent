@@ -148,8 +148,6 @@ function specifyGoal(destinationTile, me) {
         goal = `carriedBy parcel_${destinationTile.parcelId} me_${me.id}`;
     } else {
         goal = `and (at me_${me.id} tile_${destinationTile.x}-${destinationTile.y})`;
-        // goal += ` (at parcel_${destinationTile.parcelId} tile_${destinationTile.x}-${destinationTile.y})`;
-        // goal += ` (not (carriedBy parcel_${destinationTile.parcelId} me_${me.id}))`;
         if (destinationTile.parcelId !== null) {
             goal += ` (at parcel_${destinationTile.parcelId} tile_${destinationTile.x}-${destinationTile.y})`;
             goal += ` (not (carriedBy parcel_${destinationTile.parcelId} me_${me.id}))`;
@@ -197,6 +195,7 @@ async function generatePlanWithPddl(parcels, agents, map, destinationTile, me) {
 
     let domain = await readDomain();
     let encodedProblem = pddlProblem.toPddlString();
+
     await saveToFile(encodedProblem); // helps to see if the problem is correctly defined
 
     let plan = await onlineSolver(domain, encodedProblem);

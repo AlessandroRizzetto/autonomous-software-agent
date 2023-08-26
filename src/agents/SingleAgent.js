@@ -13,10 +13,11 @@ export default class SingleAgent extends Agent {
         this.plans = [];
         this.planLibrary = new Map();
         this.parcelsCarriedNow = new Map();
-        this.nearByParcels = new Map();
+        this.nearbyParcels = new Map();
+        this.options = [];
+        this.newOptions = [];
         this.isRoadOpen = false;
         this.changeQuadrant = false;
-        this.intetion_queue = new Array();
     }
 
     onConnect() {
@@ -77,6 +78,8 @@ export default class SingleAgent extends Agent {
         this.apiService.onParcelsSensing((parcels) => {
             this.visibleParcels.clear();
             for (const parcel of parcels) {
+                parcel.x = Math.round(parcel.x);
+                parcel.y = Math.round(parcel.y);
                 this.visibleParcels.set(parcel.id, parcel);
             }
         });
@@ -214,33 +217,76 @@ export default class SingleAgent extends Agent {
         let actions = this.getActionsFromPlan(plan);
         console.log('ACTIONS', actions);
         for (const action of actions) {
-            this.nearByParcels = await this.getNearbyParcels();
-            // if (this.nearByParcels.size > 0) {
-            //     console.log('NEARBY PARCELS', this.nearByParcels);
-            //     // throw new Error('NEARBY_PARCELS');
-            //     reject(new Error('NEARBY_PARCELS'));
+            let nearbyParcelsNow = await this.getNearbyParcels();
+
+            // for (const nearByParcel of nearbyParcelsNow.values()) {
+            //     if (
+            //         nearByParcel.x === this.me.x &&
+            //         nearByParcel.y === this.me.y
+            //     ) {
+            //         await this.pickup();
+            //         // this.parcelsCarriedNow.set(nearByParcel.id, {
+            //         //     id: nearByParcel.id,
+            //         //     x: nearByParcel.x,
+            //         //     y: nearByParcel.y,
+            //         //     carriedBy: this.me.id,
+            //         //     reward: nearByParcel.reward,
+            //         // });
+            //         nearbyParcelsNow.delete(nearByParcel.id);
+            //     }
             // }
 
             if (action === this.PossibleActions.Pickup) {
+                console.log('PICKING UP');
                 let pickedParcels = await this.pickup();
-                console.log(`PICKED ${pickedParcels.length} PARCELS`);
-                console.log('PICKED PARCELS', pickedParcels);
-                for (const pickedParcel of pickedParcels) {
-                    this.parcelsCarriedNow.set(pickedParcel.id, {
-                        id: pickedParcel.id,
-                        x: pickedParcel.x,
-                        y: pickedParcel.y,
-                        carriedBy: this.me.id,
-                        reward: pickedParcel.reward,
-                    });
-                }
+                // console.log(`PICKED ${pickedParcels.length} PARCELS`);
+                // console.log('PICKED PARCELS', pickedParcels);
+                // for (const pickedParcel of pickedParcels) {
+                //     this.parcelsCarriedNow.set(pickedParcel.id, {
+                //         id: pickedParcel.id,
+                //         x: pickedParcel.x,
+                //         y: pickedParcel.y,
+                //         carriedBy: this.me.id,
+                //         reward: pickedParcel.reward,
+                //     });
+                // }
+
+                // let anyNewNearbyParcel = false;
+                // for (const parcelId of nearbyParcelsNow.keys()) {
+                //     let alreadyConsideredAsOption = this.options.some(
+                //         (option) => {
+                //             return option.parcel.id === parcelId;
+                //         }
+                //     );
+                //     if (
+                //         !this.nearbyParcels.has(parcelId) &&
+                //         !alreadyConsideredAsOption
+                //     ) {
+                //         this.nearbyParcels.set(
+                //             parcelId,
+                //             nearbyParcelsNow.get(parcelId)
+                //         );
+                //         anyNewNearbyParcel = true;
+                //     }
+                // }
+                // if (anyNewNearbyParcel === true) {
+                //     console.log('NEW NEARBY PARCELS', this.nearbyParcels);
+                //     throw new Error('NEARBY_PARCELS');
+                // }
             } else if (action === this.PossibleActions.Putdown) {
                 let droppedParcels = await this.putdown();
-                console.log(`DROPPED ${droppedParcels.length} PARCELS`);
-                console.log('DROPPED PARCELS', droppedParcels);
-                for (const droppedParcel of droppedParcels) {
-                    this.parcelsCarriedNow.delete(droppedParcel.id);
-                }
+                // console.log(`DROPPED ${droppedParcels.length} PARCELS`);
+                // console.log('DROPPED PARCELS', droppedParcels);
+                // for (const droppedParcel of droppedParcels) {
+                //     this.parcelsCarriedNow.delete(droppedParcel.id);
+                // }
+
+                // const droppedParcelIds = droppedParcels.map(
+                //     (parcel) => parcel.id
+                // );
+                // this.options = this.options.filter(
+                //     (option) => !droppedParcelIds.includes(option.parcel.id)
+                // );
             } else {
                 let result = await this.move(action);
                 if (result === false) {
@@ -257,9 +303,9 @@ export default class SingleAgent extends Agent {
                 await this.explore();
             }
 
-            let bestOptions = this.getBestOptions(this.visibleParcels);
+            this.options = this.getBestOptions(this.visibleParcels);
 
-            let bestOption = bestOptions.shift();
+            let bestOption = this.options.shift();
 
             let planToReachParcel = await this.generatePlan(bestOption, true);
 
@@ -286,19 +332,19 @@ export default class SingleAgent extends Agent {
                         }
                     } catch (error) {
                         if (error.message === 'NEARBY_PARCELS') {
-                            let newOptions = this.getBestOptions(
-                                this.nearByParcels
+                            this.newOptions = this.getBestOptions(
+                                this.nearbyParcels
                             );
-                            for (const newOption of newOptions) {
-                                bestOptions = bestOptions.filter((option) => {
-                                    return (
+                            for (const newOption of this.newOptions) {
+                                this.options = this.options.filter(
+                                    (option) =>
                                         option.parcel.id !== newOption.parcel.id
-                                    );
-                                });
+                                );
                             }
-                            bestOptions.unshift(...newOptions);
+                            this.options.unshift(...this.newOptions);
                             console.log('TRYING TO PICK UP ANOTHER PARCEL');
-                            bestOption = bestOptions.shift();
+                            bestOption = this.options.shift();
+                            // this.nearbyParcels.delete(bestOption.parcel.id);
                             let plan = await this.generatePlan(
                                 bestOption,
                                 true
@@ -307,88 +353,63 @@ export default class SingleAgent extends Agent {
                                 this.plans.push(plan);
                             }
                         } else if (error.message === 'MOVE_FAILED') {
-                            if (bestOptions.length !== 0) {
-                                let otherOptions =
-                                    this.getAllOtherOptionsForSameParcel(
-                                        bestOptions,
-                                        bestOption.parcel.id
-                                    );
-                                if (otherOptions.length !== 0) {
-                                    for (const otherOption of otherOptions) {
-                                        // try {
-                                        bestOption.deliveryTile.x =
-                                            otherOption.deliveryTile.x;
-                                        bestOption.deliveryTile.y =
-                                            otherOption.deliveryTile.y;
-                                        let planToReachDeliveryTile =
-                                            await this.generatePlan(
-                                                bestOption,
-                                                false
-                                            );
-                                        if (
-                                            planToReachDeliveryTile.length > 0
-                                        ) {
-                                            // console.log(
-                                            //     'EXECUTING PLAN TO REACH DELIVERY TILE'
-                                            // );
-                                            // await this.executePlan(
-                                            //     planToReachDeliveryTile
-                                            // );
-                                            console.log('ADDING PLAN TO QUEUE');
-                                            this.plans.push(
-                                                planToReachDeliveryTile
-                                            );
-                                        }
-                                        // } catch (error) {
-                                        //     console.log(
-                                        //         'TRYING ANOTHER OPTION FOR PARCEL DELIVERY'
-                                        //     );
-                                        // }
-                                    }
-                                } else {
-                                    bestOption = bestOptions.shift();
-                                    console.log('GENERATING NEW PLAN');
-                                    let plan = await this.generatePlan(
-                                        bestOption,
-                                        true
-                                    );
-                                    if (plan.length > 0) {
-                                        this.plans.push(plan);
-                                    }
+                            if (this.options.length !== 0) {
+                                // let otherOptions =
+                                //     this.getAllOtherOptionsForSameParcel(
+                                //         this.options,
+                                //         bestOption.parcel.id
+                                //     );
+                                // if (otherOptions.length !== 0) {
+                                //     for (const otherOption of otherOptions) {
+                                //         // try {
+                                //         bestOption.deliveryTile.x =
+                                //             otherOption.deliveryTile.x;
+                                //         bestOption.deliveryTile.y =
+                                //             otherOption.deliveryTile.y;
+                                //         let planToReachDeliveryTile =
+                                //             await this.generatePlan(
+                                //                 bestOption,
+                                //                 false
+                                //             );
+                                //         if (
+                                //             planToReachDeliveryTile.length > 0
+                                //         ) {
+                                //             // console.log(
+                                //             //     'EXECUTING PLAN TO REACH DELIVERY TILE'
+                                //             // );
+                                //             // await this.executePlan(
+                                //             //     planToReachDeliveryTile
+                                //             // );
+                                //             console.log('ADDING PLAN TO QUEUE');
+                                //             this.plans.push(
+                                //                 planToReachDeliveryTile
+                                //             );
+                                //             break;
+                                //         }
+                                //         // } catch (error) {
+                                //         //     console.log(
+                                //         //         'TRYING ANOTHER OPTION FOR PARCEL DELIVERY'
+                                //         //     );
+                                //         // }
+                                //     }
+                                // } else {
+                                bestOption = this.options.shift();
+                                console.log('GENERATING NEW PLAN');
+                                let plan = await this.generatePlan(
+                                    bestOption,
+                                    true
+                                );
+                                if (plan.length > 0) {
+                                    this.plans.push(plan);
                                 }
                             }
+                            // }
                         }
                     }
                 }
             }
 
             await new Promise((resolve) => setImmediate(resolve)); // wait for the next tick
-        }
-    }
-
-    async intentionLoop() {
-        while (true) {
-            if (this.intetion_queue.length > 0) {
-                const intention = this.intetion_queue.shift();
-                if (intention) {
-                    await this.execute.achieve();
-                }
-                await new Promise((resolve) => setImmediate(resolve)); // wait for the next tick
-            }
-        }
-    }
-
-    // TO DO: modify it to a better queue system
-    async queue(desire, ...args) {
-        const last = this.intetion_queue[this.intetion_queue.length - 1]; // get the last intention
-        const current = new Intention(desire, ...args); // create a new intention
-        this.intetion_queue.push(current); // add the new intention to the queue to be executed
-    }
-
-    async stop() {
-        console.log('stop agent queued intentions');
-        for (const intention of this.intetion_queue) {
-            intention.stop();
         }
     }
 
@@ -502,6 +523,7 @@ export default class SingleAgent extends Agent {
 
             let defaultQuadrant = `${quadrantX}${quadrantY}`;
 
+            console.log('defaultQuadrant', defaultQuadrant);
             if (this.changeQuadrant === true) {
                 const otherQuadrants = quadrants.filter(
                     (quadrant) => quadrant !== defaultQuadrant
@@ -670,16 +692,18 @@ export default class SingleAgent extends Agent {
         return new Promise(async (resolve) => {
             let nearByTiles = await this.getNearbyTiles();
             let nearByParcels = new Map();
-            let minReward = 3;
+            let minReward = 5;
             for (const parcel of this.visibleParcels.values()) {
                 if (
                     !parcel.carriedBy ||
                     !this.parcelsCarriedNow.has(parcel.id)
                 ) {
                     for (const tile of nearByTiles) {
+                        parcel.x = Math.round(parcel.x);
+                        parcel.y = Math.round(parcel.y);
                         if (
-                            Math.round(parcel.x) === tile.x &&
-                            Math.round(parcel.y) === tile.y &&
+                            parcel.x === tile.x &&
+                            parcel.y === tile.y &&
                             parcel.reward > minReward
                         ) {
                             nearByParcels.set(parcel.id, parcel);
@@ -687,7 +711,7 @@ export default class SingleAgent extends Agent {
                     }
                 }
             }
-            console.log('NEARBY PARCELS', nearByParcels);
+            console.log('TOTAL NEARBY PARCELS', nearByParcels);
             resolve(nearByParcels);
         });
     }
