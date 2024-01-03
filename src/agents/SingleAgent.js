@@ -1,4 +1,5 @@
 import Agent from './Agent.js';
+import { EventEmitter } from 'events';
 import { generatePlanWithPddl } from '../pddl/PDDLParser.js';
 
 export default class SingleAgent extends Agent {
@@ -10,7 +11,6 @@ export default class SingleAgent extends Agent {
         this.visibleAgents = new Map();
         this.visibleParcels = new Map();
         this.deliveryTiles = [];
-        this.plans = [];
         this.planLibrary = new Map();
         this.parcelsCarriedNow = new Map();
         this.nearbyParcels = new Map();
@@ -18,6 +18,20 @@ export default class SingleAgent extends Agent {
         this.newOptions = [];
         this.isRoadOpen = false;
         this.changeQuadrant = false;
+        this.eventEmitter = new EventEmitter();
+
+        this.eventEmitter.on('explore', async () => {
+            while (this.visibleParcels.size === 0) {
+                console.log('NO PARCELS');
+                this.explore();
+                await new Promise((resolve) => setImmediate(resolve)); // wait for the next tick
+            }
+            this.eventEmitter.emit('generatePlan');
+        });
+
+        this.eventEmitter.on('generatePlan', this.play.bind(this));
+        this.eventEmitter.on('restart', this.play.bind(this));
+        this.eventEmitter.on('moveFailed', this.play.bind(this));
     }
 
     onConnect() {
@@ -135,12 +149,6 @@ export default class SingleAgent extends Agent {
     }
 
     async generatePlan(option, hasParcel) {
-        let plan = [];
-
-        let copyOfVisibleParcels = new Map(this.visibleParcels);
-        let copyOfVisibleAgents = new Map(this.visibleAgents);
-        let copyOfMe = { ...this.me };
-
         // save the planInfo in different way if i have a parcel or not
         const goal = {
             x: hasParcel ? option.parcel.x : option.deliveryTile.x,
@@ -153,35 +161,27 @@ export default class SingleAgent extends Agent {
             return this.planLibrary.get(planInfo);
         }
 
-        try {
-            plan = await generatePlanWithPddl(
-                copyOfVisibleParcels,
-                copyOfVisibleAgents,
-                this.map,
-                {
-                    hasParcel: hasParcel,
-                    x: goal.x,
-                    y: goal.y,
-                    parcelId: option.parcel.id,
-                },
-                copyOfMe
-            );
+        let plan = await generatePlanWithPddl(
+            this.visibleParcels,
+            this.visibleAgents,
+            this.map,
+            {
+                hasParcel: hasParcel,
+                x: goal.x,
+                y: goal.y,
+                parcelId: option.parcel.id,
+            },
+            this.me
+        );
+
+        if (plan) {
             this.planLibrary.set(planInfo, plan);
-            return plan;
-        } catch (error) {
-            console.log('ERROR GENERATING THE PLAN');
         }
 
         return plan;
     }
 
     async generateExplorationPlan(center) {
-        let plan = [];
-
-        let copyOfVisibleParcels = new Map(this.visibleParcels);
-        let copyOfVisibleAgents = new Map(this.visibleAgents);
-        let copyOfMe = { ...this.me };
-
         const planInfo = `${this.me.x},${this.me.y},${center.x},${
             center.y
         },${false}`;
@@ -190,23 +190,21 @@ export default class SingleAgent extends Agent {
             console.log('USING PLAN ALREADY GENERATED');
             return this.planLibrary.get(planInfo);
         } else {
-            try {
-                plan = await generatePlanWithPddl(
-                    copyOfVisibleParcels,
-                    copyOfVisibleAgents,
-                    this.map,
-                    {
-                        hasParcel: false,
-                        x: center.x,
-                        y: center.y,
-                        parcelId: null,
-                    },
-                    copyOfMe
-                );
+            let plan = await generatePlanWithPddl(
+                this.visibleParcels,
+                this.visibleAgents,
+                this.map,
+                {
+                    hasParcel: false,
+                    x: center.x,
+                    y: center.y,
+                    parcelId: null,
+                },
+                this.me
+            );
+
+            if (plan) {
                 this.planLibrary.set(planInfo, plan);
-                return plan;
-            } catch (error) {
-                console.log('ERROR GENERATING THE PLAN TO REACH THE CENTER');
             }
 
             return plan;
@@ -215,41 +213,39 @@ export default class SingleAgent extends Agent {
 
     async executePlan(plan) {
         let actions = this.getActionsFromPlan(plan);
+        let nearbyParcelsNow = this.getNearbyParcels();
         console.log('ACTIONS', actions);
         for (const action of actions) {
-            let nearbyParcelsNow = await this.getNearbyParcels();
-
-            // for (const nearByParcel of nearbyParcelsNow.values()) {
-            //     if (
-            //         nearByParcel.x === this.me.x &&
-            //         nearByParcel.y === this.me.y
-            //     ) {
-            //         await this.pickup();
-            //         // this.parcelsCarriedNow.set(nearByParcel.id, {
-            //         //     id: nearByParcel.id,
-            //         //     x: nearByParcel.x,
-            //         //     y: nearByParcel.y,
-            //         //     carriedBy: this.me.id,
-            //         //     reward: nearByParcel.reward,
-            //         // });
-            //         nearbyParcelsNow.delete(nearByParcel.id);
-            //     }
-            // }
+            for (const nearByParcel of nearbyParcelsNow.values()) {
+                if (
+                    nearByParcel.x === this.me.x &&
+                    nearByParcel.y === this.me.y
+                ) {
+                    await this.pickup();
+                    this.parcelsCarriedNow.set(nearByParcel.id, {
+                        id: nearByParcel.id,
+                        x: nearByParcel.x,
+                        y: nearByParcel.y,
+                        carriedBy: this.me.id,
+                        reward: nearByParcel.reward,
+                    });
+                    nearbyParcelsNow.delete(nearByParcel.id);
+                }
+            }
 
             if (action === this.PossibleActions.Pickup) {
-                console.log('PICKING UP');
                 let pickedParcels = await this.pickup();
-                // console.log(`PICKED ${pickedParcels.length} PARCELS`);
-                // console.log('PICKED PARCELS', pickedParcels);
-                // for (const pickedParcel of pickedParcels) {
-                //     this.parcelsCarriedNow.set(pickedParcel.id, {
-                //         id: pickedParcel.id,
-                //         x: pickedParcel.x,
-                //         y: pickedParcel.y,
-                //         carriedBy: this.me.id,
-                //         reward: pickedParcel.reward,
-                //     });
-                // }
+                console.log(`PICKED ${pickedParcels.length} PARCELS`);
+                console.log('PICKED PARCELS', pickedParcels);
+                for (const pickedParcel of pickedParcels) {
+                    this.parcelsCarriedNow.set(pickedParcel.id, {
+                        id: pickedParcel.id,
+                        x: pickedParcel.x,
+                        y: pickedParcel.y,
+                        carriedBy: this.me.id,
+                        reward: pickedParcel.reward,
+                    });
+                }
 
                 // let anyNewNearbyParcel = false;
                 // for (const parcelId of nearbyParcelsNow.keys()) {
@@ -275,11 +271,11 @@ export default class SingleAgent extends Agent {
                 // }
             } else if (action === this.PossibleActions.Putdown) {
                 let droppedParcels = await this.putdown();
-                // console.log(`DROPPED ${droppedParcels.length} PARCELS`);
-                // console.log('DROPPED PARCELS', droppedParcels);
-                // for (const droppedParcel of droppedParcels) {
-                //     this.parcelsCarriedNow.delete(droppedParcel.id);
-                // }
+                console.log(`DROPPED ${droppedParcels.length} PARCELS`);
+                console.log('DROPPED PARCELS', droppedParcels);
+                for (const droppedParcel of droppedParcels) {
+                    this.parcelsCarriedNow.delete(droppedParcel.id);
+                }
 
                 // const droppedParcelIds = droppedParcels.map(
                 //     (parcel) => parcel.id
@@ -297,120 +293,118 @@ export default class SingleAgent extends Agent {
     }
 
     async play() {
-        while (true) {
-            while (this.visibleParcels.size === 0) {
-                console.log('NO PARCELS');
-                await this.explore();
-            }
+        this.options = this.getBestOptions(this.visibleParcels);
 
-            this.options = this.getBestOptions(this.visibleParcels);
+        let bestOption = this.options.shift();
 
-            let bestOption = this.options.shift();
-
-            let planToReachParcel = await this.generatePlan(bestOption, true);
-
-            if (planToReachParcel.length <= 0) {
-                console.log('NO PLAN');
-                await this.explore();
-            } else {
-                this.plans.push(planToReachParcel);
-                while (this.plans.length > 0) {
-                    let planToReachParcel = this.plans.shift();
-                    try {
-                        console.log('EXECUTING PLAN TO REACH PARCEL');
-                        await this.executePlan(planToReachParcel);
-
-                        let planToReachDeliveryTile = await this.generatePlan(
-                            bestOption,
-                            false
-                        );
-                        if (planToReachDeliveryTile.length > 0) {
-                            console.log(
-                                'EXECUTING PLAN TO REACH DELIVERY TILE'
-                            );
-                            await this.executePlan(planToReachDeliveryTile);
-                        }
-                    } catch (error) {
-                        if (error.message === 'NEARBY_PARCELS') {
-                            this.newOptions = this.getBestOptions(
-                                this.nearbyParcels
-                            );
-                            for (const newOption of this.newOptions) {
-                                this.options = this.options.filter(
-                                    (option) =>
-                                        option.parcel.id !== newOption.parcel.id
-                                );
-                            }
-                            this.options.unshift(...this.newOptions);
-                            console.log('TRYING TO PICK UP ANOTHER PARCEL');
-                            bestOption = this.options.shift();
-                            // this.nearbyParcels.delete(bestOption.parcel.id);
-                            let plan = await this.generatePlan(
-                                bestOption,
-                                true
-                            );
-                            if (plan.length > 0) {
-                                this.plans.push(plan);
-                            }
-                        } else if (error.message === 'MOVE_FAILED') {
-                            if (this.options.length !== 0) {
-                                // let otherOptions =
-                                //     this.getAllOtherOptionsForSameParcel(
-                                //         this.options,
-                                //         bestOption.parcel.id
-                                //     );
-                                // if (otherOptions.length !== 0) {
-                                //     for (const otherOption of otherOptions) {
-                                //         // try {
-                                //         bestOption.deliveryTile.x =
-                                //             otherOption.deliveryTile.x;
-                                //         bestOption.deliveryTile.y =
-                                //             otherOption.deliveryTile.y;
-                                //         let planToReachDeliveryTile =
-                                //             await this.generatePlan(
-                                //                 bestOption,
-                                //                 false
-                                //             );
-                                //         if (
-                                //             planToReachDeliveryTile.length > 0
-                                //         ) {
-                                //             // console.log(
-                                //             //     'EXECUTING PLAN TO REACH DELIVERY TILE'
-                                //             // );
-                                //             // await this.executePlan(
-                                //             //     planToReachDeliveryTile
-                                //             // );
-                                //             console.log('ADDING PLAN TO QUEUE');
-                                //             this.plans.push(
-                                //                 planToReachDeliveryTile
-                                //             );
-                                //             break;
-                                //         }
-                                //         // } catch (error) {
-                                //         //     console.log(
-                                //         //         'TRYING ANOTHER OPTION FOR PARCEL DELIVERY'
-                                //         //     );
-                                //         // }
-                                //     }
-                                // } else {
-                                bestOption = this.options.shift();
-                                console.log('GENERATING NEW PLAN');
-                                let plan = await this.generatePlan(
-                                    bestOption,
-                                    true
-                                );
-                                if (plan.length > 0) {
-                                    this.plans.push(plan);
-                                }
-                            }
-                            // }
-                        }
-                    }
-                }
-            }
-
-            await new Promise((resolve) => setImmediate(resolve)); // wait for the next tick
+        if (!bestOption) {
+            setTimeout(() => {
+                this.eventEmitter.emit('explore');
+            });
+            return;
         }
+
+        let planToReachParcel = await this.generatePlan(bestOption, true);
+
+        if (!planToReachParcel) {
+            setTimeout(() => {
+                this.eventEmitter.emit('explore');
+            });
+            return;
+        }
+
+        try {
+            console.log('EXECUTING PLAN TO REACH PARCEL');
+            await this.executePlan(planToReachParcel);
+
+            let planToReachDeliveryTile = await this.generatePlan(
+                bestOption,
+                false
+            );
+            if (planToReachDeliveryTile) {
+                console.log('EXECUTING PLAN TO REACH DELIVERY TILE');
+                await this.executePlan(planToReachDeliveryTile);
+            }
+            setTimeout(() => {
+                this.eventEmitter.emit('restart');
+            });
+        } catch (error) {
+            if (error.message === 'NEARBY_PARCELS') {
+                this.newOptions = this.getBestOptions(this.nearbyParcels);
+                for (const newOption of this.newOptions) {
+                    this.options = this.options.filter(
+                        (option) => option.parcel.id !== newOption.parcel.id
+                    );
+                }
+                this.options.unshift(...this.newOptions);
+                console.log('TRYING TO PICK UP ANOTHER PARCEL');
+                bestOption = this.options.shift();
+                // this.nearbyParcels.delete(bestOption.parcel.id);
+                let plan = await this.generatePlan(bestOption, true);
+                if (plan) {
+                    this.plans.push(plan);
+                }
+            } else if (error.message === 'MOVE_FAILED') {
+                setTimeout(() => {
+                    this.eventEmitter.emit('moveFailed');
+                });
+
+                // if (this.options.length !== 0) {
+                // let otherOptions =
+                //     this.getAllOtherOptionsForSameParcel(
+                //         this.options,
+                //         bestOption.parcel.id
+                //     );
+                // if (otherOptions.length !== 0) {
+                //     for (const otherOption of otherOptions) {
+                //         // try {
+                //         bestOption.deliveryTile.x =
+                //             otherOption.deliveryTile.x;
+                //         bestOption.deliveryTile.y =
+                //             otherOption.deliveryTile.y;
+                //         let planToReachDeliveryTile =
+                //             await this.generatePlan(
+                //                 bestOption,
+                //                 false
+                //             );
+                //         if (
+                //             planToReachDeliveryTile.length > 0
+                //         ) {
+                //             // console.log(
+                //             //     'EXECUTING PLAN TO REACH DELIVERY TILE'
+                //             // );
+                //             // await this.executePlan(
+                //             //     planToReachDeliveryTile
+                //             // );
+                //             console.log('ADDING PLAN TO QUEUE');
+                //             this.plans.push(
+                //                 planToReachDeliveryTile
+                //             );
+                //             break;
+                //         }
+                //         // } catch (error) {
+                //         //     console.log(
+                //         //         'TRYING ANOTHER OPTION FOR PARCEL DELIVERY'
+                //         //     );
+                //         // }
+                //     }
+                // } else {
+                //     bestOption = this.options.shift();
+                //     console.log('GENERATING NEW PLAN');
+                //     let plan = await this.generatePlan(bestOption, true);
+                //     if (plan) {
+                //         this.plans.push(plan);
+                //     }
+                // }
+                // }
+            } else {
+                setTimeout(() => {
+                    this.eventEmitter.emit('restart');
+                });
+            }
+        }
+
+        await new Promise((resolve) => setImmediate(resolve)); // wait for the next tick
     }
 
     async explore() {
@@ -420,23 +414,25 @@ export default class SingleAgent extends Agent {
 
         console.log('EXPLORATION GOAL', explorationTile);
 
-        let explorationPlan = await this.generateExplorationPlan(
-            explorationTile
-        );
+        // let explorationPlan = await this.generateExplorationPlan(
+        //     explorationTile
+        // );
 
         console.log('EXPLORATION PLAN GENERATED');
 
-        if (explorationPlan.length > 0) {
-            try {
-                await this.executePlan(explorationPlan);
-            } catch (error) {
-                console.log('EXPLORATION PLAN FAILED');
-                await this.exploreRandomly();
-            }
-        } else {
-            console.log('NO EXPLORATION PLAN');
-            await this.exploreRandomly();
-        }
+        await this.exploreRandomly();
+
+        // if (explorationPlan) {
+        //     try {
+        //         await this.executePlan(explorationPlan);
+        //     } catch (error) {
+        //         console.log('EXPLORATION PLAN FAILED');
+        //         await this.exploreRandomly();
+        //     }
+        // } else {
+        //     console.log('NO EXPLORATION PLAN');
+        //     await this.exploreRandomly();
+        // }
     }
 
     async exploreRandomly() {
@@ -688,81 +684,72 @@ export default class SingleAgent extends Agent {
 
     updateRemainingRewardPerCarriedParcel() {}
 
-    async getNearbyParcels() {
-        return new Promise(async (resolve) => {
-            let nearByTiles = await this.getNearbyTiles();
-            let nearByParcels = new Map();
-            let minReward = 5;
-            for (const parcel of this.visibleParcels.values()) {
-                if (
-                    !parcel.carriedBy ||
-                    !this.parcelsCarriedNow.has(parcel.id)
-                ) {
-                    for (const tile of nearByTiles) {
-                        parcel.x = Math.round(parcel.x);
-                        parcel.y = Math.round(parcel.y);
-                        if (
-                            parcel.x === tile.x &&
-                            parcel.y === tile.y &&
-                            parcel.reward > minReward
-                        ) {
-                            nearByParcels.set(parcel.id, parcel);
-                        }
+    getNearbyParcels() {
+        let nearByTiles = this.getNearbyTiles();
+        let nearByParcels = new Map();
+        let minReward = 5;
+        for (const parcel of this.visibleParcels.values()) {
+            if (!parcel.carriedBy || !this.parcelsCarriedNow.has(parcel.id)) {
+                for (const tile of nearByTiles) {
+                    if (
+                        parcel.x === tile.x &&
+                        parcel.y === tile.y &&
+                        parcel.reward > minReward
+                    ) {
+                        nearByParcels.set(parcel.id, parcel);
                     }
                 }
             }
-            console.log('TOTAL NEARBY PARCELS', nearByParcels);
-            resolve(nearByParcels);
-        });
+        }
+        console.log('TOTAL NEARBY PARCELS', nearByParcels);
+        return nearByParcels;
     }
 
-    async getNearbyTiles() {
-        return new Promise((resolve) => {
-            let maxDistance = 2;
-            let nearByTiles = [];
+    getNearbyTiles() {
+        let maxDistance = 2;
+        let nearByTiles = [];
 
-            for (let i = 1; i <= maxDistance; i++) {
-                const adjacentCells = [
-                    { x: this.me.x - i, y: this.me.y },
-                    { x: this.me.x + i, y: this.me.y },
-                    { x: this.me.x, y: this.me.y - i },
-                    { x: this.me.x, y: this.me.y + i },
-                    {
-                        x: this.me.x - i,
-                        y: this.me.y - i,
-                    },
-                    {
-                        x: this.me.x - i,
-                        y: this.me.y + i,
-                    },
-                    {
-                        x: this.me.x + i,
-                        y: this.me.y - i,
-                    },
-                    {
-                        x: this.me.x + i,
-                        y: this.me.y + i,
-                    },
-                ];
+        for (let i = 1; i <= maxDistance; i++) {
+            const adjacentCells = [
+                { x: this.me.x - i, y: this.me.y },
+                { x: this.me.x + i, y: this.me.y },
+                { x: this.me.x, y: this.me.y - i },
+                { x: this.me.x, y: this.me.y + i },
+                {
+                    x: this.me.x - i,
+                    y: this.me.y - i,
+                },
+                {
+                    x: this.me.x - i,
+                    y: this.me.y + i,
+                },
+                {
+                    x: this.me.x + i,
+                    y: this.me.y - i,
+                },
+                {
+                    x: this.me.x + i,
+                    y: this.me.y + i,
+                },
+            ];
 
-                for (let i = 0; i < adjacentCells.length; i++) {
-                    if (
-                        adjacentCells[i].x >= 0 &&
-                        adjacentCells[i].x < this.map.width &&
-                        adjacentCells[i].y >= 0 &&
-                        adjacentCells[i].y < this.map.height &&
-                        this.map.matrix[adjacentCells[i].x][adjacentCells[i].y]
-                            .type !== 'wall'
-                    ) {
-                        nearByTiles.push({
-                            x: adjacentCells[i].x,
-                            y: adjacentCells[i].y,
-                        });
-                    }
+            for (let i = 0; i < adjacentCells.length; i++) {
+                if (
+                    adjacentCells[i].x >= 0 &&
+                    adjacentCells[i].x < this.map.width &&
+                    adjacentCells[i].y >= 0 &&
+                    adjacentCells[i].y < this.map.height &&
+                    this.map.matrix[adjacentCells[i].x][adjacentCells[i].y]
+                        .type !== 'wall'
+                ) {
+                    nearByTiles.push({
+                        x: adjacentCells[i].x,
+                        y: adjacentCells[i].y,
+                    });
                 }
             }
+        }
 
-            resolve(nearByTiles);
-        });
+        return nearByTiles;
     }
 }

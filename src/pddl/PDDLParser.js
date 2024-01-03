@@ -99,6 +99,7 @@ function declareMyself(beliefsSet, me) {
 }
 
 function declareAgents(beliefsSet, agents) {
+    // if I am the only agent, then I don't need to declare the other agents
     if (agents.size === 1) {
         return;
     }
@@ -123,23 +124,18 @@ function specifyParcelsState(beliefsSet, parcels, me) {
 }
 
 function specifyAgentsState(beliefsSet, agents) {
+    // if I am the only agent, then I don't need to specify the state of the other agents
     if (agents.size === 1) {
         return;
     }
 
     for (const agent of agents.values()) {
-        beliefsSet.declare(
-            `at agent_${agent.id} tile_${Math.round(agent.x)}-${Math.round(
-                agent.y
-            )}`
-        );
+        beliefsSet.declare(`at agent_${agent.id} tile_${agent.x}-${agent.y}`);
     }
 }
 
 function specifyMyState(beliefsSet, me) {
-    beliefsSet.declare(
-        `at me_${me.id} tile_${Math.round(me.x)}-${Math.round(me.y)}`
-    );
+    beliefsSet.declare(`at me_${me.id} tile_${me.x}-${me.y}`);
 }
 
 function specifyGoal(destinationTile, me) {
@@ -199,11 +195,9 @@ async function generatePlanWithPddl(parcels, agents, map, destinationTile, me) {
     await saveToFile(encodedProblem); // helps to see if the problem is correctly defined
 
     let plan = await onlineSolver(domain, encodedProblem);
-    console.log(`SHOW ME THE PLAN: ${plan}`);
 
     if (!plan) {
-        console.log('SHOW ME THE PLAN 2:');
-        throw new Error('No plan found');
+        console.log('ERROR GENERATING PLAN INSIDE PDDLParser.js');
     }
 
     return plan;
