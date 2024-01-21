@@ -6,8 +6,14 @@ export default class Agent {
             throw new TypeError('Cannot instantiate abstract class');
         }
         this.apiService = new DeliverooApi(process.env.HOST, process.env.TOKEN);
-        this.data = new Map();
-        this.possibleMoves = ['up', 'right', 'down', 'left'];
+        this.PossibleActions = Object.freeze({
+            Up: 'up',
+            Right: 'right',
+            Down: 'down',
+            Left: 'left',
+            Pickup: 'pickup',
+            Putdown: 'putdown',
+        });
         this.registerListeners();
     }
 
@@ -15,6 +21,7 @@ export default class Agent {
         this.onConnect();
         this.onDisconnect();
         this.onMap();
+        this.onConfig();
         this.onTile();
         this.onNotTile();
         this.onYou();
@@ -23,15 +30,15 @@ export default class Agent {
     }
 
     async move(direction) {
-        await this.apiService.move(direction);
+        return await this.apiService.move(direction);
     }
 
     async putdown() {
-        await this.apiService.putdown();
+        return await this.apiService.putdown();
     }
 
     async pickup() {
-        await this.apiService.pickup();
+        return await this.apiService.pickup();
     }
 
     async timer(ms) {
@@ -41,6 +48,12 @@ export default class Agent {
     getDirectionName(directionIndex) {
         if (directionIndex > 3) directionIndex = directionIndex % 4;
         return this.possibleMoves[directionIndex];
+    }
+
+    distance({ x: x1, y: y1 }, { x: x2, y: y2 }) {
+        const dx = Math.abs(Math.round(x1) - Math.round(x2));
+        const dy = Math.abs(Math.round(y1) - Math.round(y2));
+        return dx + dy;
     }
 }
 
@@ -53,6 +66,10 @@ Agent.prototype.onDisconnect = function () {
 };
 
 Agent.prototype.onMap = function () {
+    throw new Error('Method not implemented');
+};
+
+Agent.prototype.onConfig = function () {
     throw new Error('Method not implemented');
 };
 

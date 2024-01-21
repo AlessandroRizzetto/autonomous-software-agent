@@ -9,8 +9,10 @@
     },
     "rules": {
       "indent": [
-        "error",
-        4
+        "error", 4, 
+        { 
+          "SwitchCase": 1 
+        }
       ],
       "quotes": [
         "error",
