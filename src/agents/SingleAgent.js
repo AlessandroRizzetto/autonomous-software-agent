@@ -12,13 +12,11 @@ export default class SingleAgent extends Agent {
         this.visibleParcels = new Map();
         this.deliveryTiles = [];
         this.planLibrary = new Map();
-        this.parcelsCarriedNow = new Map();
-        this.nearbyParcels = new Map();
         this.options = [];
-        this.newOptions = [];
+        this.parcelsCarriedNow = new Map();
         this.isRoadOpen = false;
         this.changeQuadrant = false;
-        this.someOtherParcelOnTheWay = false;
+        this.nearestParcelStrategy = false;
         this.eventEmitter = new EventEmitter();
 
         this.eventEmitter.on('explore', async () => {
@@ -220,6 +218,7 @@ export default class SingleAgent extends Agent {
 
         if (plan) {
             this.planLibrary.set(planInfo, plan);
+            plan = plan.filter((step) => step.action !== 'pickup');
         }
 
         return plan;
@@ -260,30 +259,51 @@ export default class SingleAgent extends Agent {
         console.log('ACTIONS', actions);
         for (const action of actions) {
             let nearbyParcelsNow = this.getNearbyParcels();
-            for (const nearByParcel of nearbyParcelsNow.values()) {
-                console.log('me', this.me.x, this.me.y);
-                console.log('parcel', nearByParcel.x, nearByParcel.y);
-                if (
-                    nearByParcel.x === this.me.x &&
-                    nearByParcel.y === this.me.y
-                ) {
-                    await this.pickup();
+            if (action !== this.PossibleActions.Pickup) {
+                for (const nearByParcel of nearbyParcelsNow.values()) {
+                    console.log(nearByParcel);
+                    console.log('me', this.me.x, this.me.y);
+                    console.log('parcel', nearByParcel.x, nearByParcel.y);
+                    if (
+                        nearByParcel.x === this.me.x &&
+                        nearByParcel.y === this.me.y
+                    ) {
+                        let pickedParcels = await this.pickup();
+                        console.log('Pickup on the way', pickedParcels);
+                        this.parcelsCarriedNow.set(
+                            nearByParcel.id,
+                            nearByParcel
+                        );
+                    }
                 }
             }
 
             if (action === this.PossibleActions.Pickup) {
                 let pickedParcels = await this.pickup();
-                console.log('Pickup');
+                console.log('Pickup', pickedParcels);
+                for (const pickedParcel of pickedParcels) {
+                    this.parcelsCarriedNow.set(pickedParcel.id, {
+                        id: pickedParcel.id,
+                        x: pickedParcel.x,
+                        y: pickedParcel.y,
+                        carriedBy: this.me,
+                        reward: pickedParcel.reward,
+                    });
+                }
 
                 let nearbyParcelsNow = this.getNearbyParcels();
-                for (const nearByParcel of nearbyParcelsNow.values()) {
-                    console.log('me', this.me.x, this.me.y);
-                    console.log('parcel', nearByParcel.x, nearByParcel.y);
-                    this.options.push(...nearbyParcelsNow);
+
+                if (nearbyParcelsNow.size != 0) {
+                    console.log(nearbyParcelsNow);
+                    this.nearestParcelStrategy = true;
+                    return false;
+                } else {
+                    this.nearestParcelStrategy = false;
                 }
             } else if (action === this.PossibleActions.Putdown) {
                 let droppedParcels = await this.putdown();
                 console.log('Putdown');
+                this.parcelsCarriedNow.clear();
             } else {
                 let result = await this.move(action);
                 console.log('Move', action);
@@ -298,14 +318,11 @@ export default class SingleAgent extends Agent {
     }
 
     async play() {
-        if (this.someOtherParcelOnTheWay === true) {
-            this.options = this.getBestOptions(this.nearbyParcels);
-            console.log('ON THE WAY OPTIONS', this.options);
-        } else {
-            this.options = this.getBestOptions(this.visibleParcels);
-        }
+        this.options = this.getBestOptions(this.visibleParcels);
 
         const bestOption = this.options.shift();
+
+        console.log('BEST OPTION', bestOption);
 
         if (!bestOption) {
             setTimeout(() => {
@@ -325,20 +342,18 @@ export default class SingleAgent extends Agent {
 
         let fullPlan = planToReachParcel;
 
-        if (this.someOtherParcelOnTheWay !== true) {
-            const planToReachDeliveryTile = await this.generatePlanFromParcel(
-                bestOption
-            );
+        const planToReachDeliveryTile = await this.generatePlanFromParcel(
+            bestOption
+        );
 
-            if (!planToReachDeliveryTile) {
-                setTimeout(() => {
-                    this.eventEmitter.emit('restart');
-                });
-                return;
-            }
-
-            fullPlan = planToReachParcel.concat(planToReachDeliveryTile);
+        if (!planToReachDeliveryTile) {
+            setTimeout(() => {
+                this.eventEmitter.emit('restart');
+            });
+            return;
         }
+
+        fullPlan = planToReachParcel.concat(planToReachDeliveryTile);
 
         try {
             console.log('EXECUTING FULL PLAN');
@@ -355,8 +370,8 @@ export default class SingleAgent extends Agent {
                 });
             }
         } catch (error) {
-            if (error.message === 'NEARBY_PARCELS') {
-            } else if (error.message === 'MOVE_FAILED') {
+            if (error.message === 'MOVE_FAILED') {
+                console.log('MOVE_FAILED');
                 setTimeout(() => {
                     this.eventEmitter.emit('moveFailed');
                 });
@@ -451,21 +466,6 @@ export default class SingleAgent extends Agent {
         }
 
         return actions;
-    }
-
-    getAllOtherOptionsForSameParcel(options, parcelId) {
-        let optionsForParcelDelivery = options.filter((option) => {
-            return option.parcel.id === parcelId;
-        });
-
-        optionsForParcelDelivery.sort((a, b) => {
-            const distanceToA = this.distance(a.parcel, a.deliveryTile);
-            const distanceToB = this.distance(b.parcel, b.deliveryTile);
-
-            return distanceToA - distanceToB;
-        });
-
-        return optionsForParcelDelivery;
     }
 
     async getCenterTile() {
@@ -589,7 +589,11 @@ export default class SingleAgent extends Agent {
         let agentMovementDuration = this.config.MOVEMENT_DURATION;
         let agentVelocity = 1 / agentMovementDuration;
         for (const parcel of parcels.values()) {
-            if (!parcel.carriedBy || this.me.id === parcel.carriedBy) {
+            if (
+                !parcel.carriedBy ||
+                (this.me.id === parcel.carriedBy &&
+                    !this.parcelsCarriedNow.has(parcel.id))
+            ) {
                 for (const deliveryTile of this.deliveryTiles) {
                     const distanceFromMeToParcel = this.distance(
                         { x: this.me.x, y: this.me.y },
@@ -624,35 +628,43 @@ export default class SingleAgent extends Agent {
             return options;
         }
 
-        options.sort((a, b) => {
-            if (b.parcelRemainingReward !== a.parcelRemainingReward) {
-                return b.parcelRemainingReward - a.parcelRemainingReward;
-            } else {
+        if (this.nearestParcelStrategy === true) {
+            options.sort((a, b) => {
                 const distanceToA = this.distance(a.parcel, a.deliveryTile);
                 const distanceToB = this.distance(b.parcel, b.deliveryTile);
 
                 return distanceToA - distanceToB;
-            }
-        });
+            });
+        } else {
+            options.sort((a, b) => {
+                if (b.parcelRemainingReward !== a.parcelRemainingReward) {
+                    return b.parcelRemainingReward - a.parcelRemainingReward;
+                } else {
+                    const distanceToA = this.distance(a.parcel, a.deliveryTile);
+                    const distanceToB = this.distance(b.parcel, b.deliveryTile);
 
-        const bestOption = options[0];
-        options = options.filter((option) => {
-            return (
-                option.parcelRemainingReward >
-                bestOption.parcelRemainingReward / 2
-            );
-        });
+                    return distanceToA - distanceToB;
+                }
+            });
+
+            const bestOption = options[0];
+            options = options.filter((option) => {
+                return (
+                    option.parcelRemainingReward >
+                    bestOption.parcelRemainingReward / 2
+                );
+            });
+        }
+
         return options;
     }
-
-    updateRemainingRewardPerCarriedParcel() {}
 
     getNearbyParcels() {
         let nearByTiles = this.getNearbyTiles();
         let nearByParcels = new Map();
         let minReward = 1;
         for (const parcel of this.visibleParcels.values()) {
-            if (!parcel.carriedBy) {
+            if (!parcel.carriedBy && !this.parcelsCarriedNow.has(parcel.id)) {
                 for (const tile of nearByTiles) {
                     if (
                         parcel.x === tile.x &&
