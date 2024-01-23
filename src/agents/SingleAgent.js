@@ -22,7 +22,7 @@ export default class SingleAgent extends Agent {
         this.eventEmitter.on('explore', async () => {
             while (this.visibleParcels.size === 0) {
                 console.log('NO PARCELS');
-                this.explore();
+                await this.explore();
                 await new Promise((resolve) => setImmediate(resolve)); // wait for the next tick
             }
             this.eventEmitter.emit('generatePlan');
@@ -225,33 +225,33 @@ export default class SingleAgent extends Agent {
     }
 
     async generateExplorationPlan(center) {
-        const planInfo = `${this.me.x},${this.me.y},${center.x},${
-            center.y
-        },${false}`;
+        // const planInfo = `${this.me.x},${this.me.y},${center.x},${
+        //     center.y
+        // },${false}`;
 
-        if (this.planLibrary.has(planInfo)) {
-            console.log('USING PLAN ALREADY GENERATED');
-            return this.planLibrary.get(planInfo);
-        } else {
-            let plan = await generatePlanWithPddl(
-                this.visibleParcels,
-                this.visibleAgents,
-                this.map,
-                {
-                    hasParcel: false,
-                    x: center.x,
-                    y: center.y,
-                    parcelId: null,
-                },
-                this.me
-            );
+        // if (this.planLibrary.has(planInfo)) {
+        //     console.log('USING PLAN ALREADY GENERATED');
+        //     return this.planLibrary.get(planInfo);
+        // } else {
+        let plan = await generatePlanWithPddl(
+            this.visibleParcels,
+            this.visibleAgents,
+            this.map,
+            {
+                hasParcel: false,
+                x: center.x,
+                y: center.y,
+                parcelId: null,
+            },
+            this.me
+        );
 
-            if (plan) {
-                this.planLibrary.set(planInfo, plan);
-            }
+        // if (plan) {
+        //     this.planLibrary.set(planInfo, plan);
+        // }
 
-            return plan;
-        }
+        return plan;
+        // }
     }
 
     async executePlan(plan) {
@@ -317,6 +317,25 @@ export default class SingleAgent extends Agent {
         return true;
     }
 
+    async executeRandomPlan(plan) {
+        let actions = this.getActionsFromPlan(plan);
+        console.log('ACTIONS', actions);
+        for (const action of actions) {
+            let nearbyParcelsNow = this.getNearbyParcels();
+            if (nearbyParcelsNow.size != 0) {
+                console.log(nearbyParcelsNow);
+                this.changeQuadrant = true;
+                return;
+            }
+            let result = await this.move(action);
+            console.log('Move', action);
+            if (result === false) {
+                throw new Error('MOVE_FAILED');
+            }
+        }
+        this.changeQuadrant = true;
+    }
+
     async play() {
         this.options = this.getBestOptions(this.visibleParcels);
 
@@ -357,13 +376,13 @@ export default class SingleAgent extends Agent {
 
         try {
             console.log('EXECUTING FULL PLAN');
-            const success = await this.executePlan(fullPlan);
-            if (success === true) {
+            const delivered = await this.executePlan(fullPlan);
+            if (delivered === true) {
                 setTimeout(() => {
                     console.log('DELIVERED PARCEL');
                     this.eventEmitter.emit('restart');
                 });
-            } else if (success === false) {
+            } else if (delivered === false) {
                 setTimeout(() => {
                     console.log('PARCELS ON THE WAY');
                     this.eventEmitter.emit('parcelsOnTheWay');
@@ -386,31 +405,29 @@ export default class SingleAgent extends Agent {
     }
 
     async explore() {
-        const centerTile = await this.getCenterTile();
+        const centerTile = this.getCenterTile();
 
-        const explorationTile = await this.getExplorationTile(centerTile);
+        const explorationTile = this.getExplorationTile(centerTile);
 
         console.log('EXPLORATION GOAL', explorationTile);
 
-        // let explorationPlan = await this.generateExplorationPlan(
-        //     explorationTile
-        // );
+        let explorationPlan = await this.generateExplorationPlan(
+            explorationTile
+        );
 
         console.log('EXPLORATION PLAN GENERATED');
 
-        await this.exploreRandomly();
-
-        // if (explorationPlan) {
-        //     try {
-        //         await this.executePlan(explorationPlan);
-        //     } catch (error) {
-        //         console.log('EXPLORATION PLAN FAILED');
-        //         await this.exploreRandomly();
-        //     }
-        // } else {
-        //     console.log('NO EXPLORATION PLAN');
-        //     await this.exploreRandomly();
-        // }
+        if (explorationPlan) {
+            try {
+                await this.executeRandomPlan(explorationPlan);
+            } catch (error) {
+                console.log('EXPLORATION PLAN FAILED');
+                this.changeQuadrant = true;
+            }
+        } else {
+            console.log('NO EXPLORATION PLAN');
+            await this.exploreRandomly();
+        }
     }
 
     async exploreRandomly() {
@@ -468,119 +485,117 @@ export default class SingleAgent extends Agent {
         return actions;
     }
 
-    async getCenterTile() {
-        return new Promise((resolve) => {
-            const { x, y } = { x: this.me.x, y: this.me.y };
-            //console.log('Calculating center tile');
-            //console.log('map width', this.map.width);
-            //console.log('map height', this.map.height);
-            const quadrants = ['11', '12', '21', '22'];
-            const centerTile = {};
+    getCenterTile() {
+        const { x, y } = { x: this.me.x, y: this.me.y };
+        //console.log('Calculating center tile');
+        //console.log('map width', this.map.width);
+        //console.log('map height', this.map.height);
+        const quadrants = ['11', '12', '21', '22'];
+        const centerTile = {};
 
-            const quadrantX = x <= this.map.width / 2 ? 1 : 2;
-            const quadrantY = y <= this.map.height / 2 ? 1 : 2;
+        const quadrantX = x <= this.map.width / 2 ? 1 : 2;
+        const quadrantY = y <= this.map.height / 2 ? 1 : 2;
 
-            let defaultQuadrant = `${quadrantX}${quadrantY}`;
+        let defaultQuadrant = `${quadrantX}${quadrantY}`;
 
-            console.log('defaultQuadrant', defaultQuadrant);
-            if (this.changeQuadrant === true) {
-                const otherQuadrants = quadrants.filter(
-                    (quadrant) => quadrant !== defaultQuadrant
-                );
+        console.log('defaultQuadrant', defaultQuadrant);
+        if (this.changeQuadrant === true) {
+            const otherQuadrants = quadrants.filter(
+                (quadrant) => quadrant !== defaultQuadrant
+            );
 
-                defaultQuadrant =
-                    otherQuadrants[
-                        Math.floor(Math.random() * otherQuadrants.length)
-                    ];
+            defaultQuadrant =
+                otherQuadrants[
+                    Math.floor(Math.random() * otherQuadrants.length)
+                ];
 
-                this.changeQuadrant = false;
-            }
+            this.changeQuadrant = false;
+        }
 
-            switch (defaultQuadrant) {
-                case '11':
-                    centerTile.x = Math.round(this.map.width / 4);
-                    centerTile.y = Math.round(this.map.height / 4);
-                    console.log('centerTile', centerTile);
+        switch (defaultQuadrant) {
+            case '11':
+                centerTile.x = Math.round(this.map.width / 4);
+                centerTile.y = Math.round(this.map.height / 4);
+                console.log('centerTile', centerTile);
 
-                    break;
-                case '12':
-                    centerTile.x = Math.round(this.map.width / 4);
-                    centerTile.y = Math.round((this.map.height / 3) * 2);
-                    console.log('centerTile', centerTile);
+                break;
+            case '12':
+                centerTile.x = Math.round(this.map.width / 4);
+                centerTile.y = Math.round((this.map.height / 3) * 2);
+                console.log('centerTile', centerTile);
 
-                    break;
-                case '21':
-                    centerTile.x = Math.round((this.map.width / 3) * 2);
-                    centerTile.y = Math.round(this.map.height / 4);
-                    console.log('centerTile', centerTile);
+                break;
+            case '21':
+                centerTile.x = Math.round((this.map.width / 3) * 2);
+                centerTile.y = Math.round(this.map.height / 4);
+                console.log('centerTile', centerTile);
 
-                    break;
-                case '22':
-                    centerTile.x = Math.round((this.map.width / 3) * 2);
-                    centerTile.y = Math.round((this.map.height / 3) * 2);
-                    console.log('centerTile', centerTile);
+                break;
+            case '22':
+                centerTile.x = Math.round((this.map.width / 3) * 2);
+                centerTile.y = Math.round((this.map.height / 3) * 2);
+                console.log('centerTile', centerTile);
 
-                    break;
-                default:
-                    return;
-            }
+                break;
+            default:
+                return;
+        }
 
-            resolve(centerTile);
-        });
+        return centerTile;
     }
 
-    async getExplorationTile(centerTile) {
-        return new Promise((resolve) => {
-            let foundGoodCell = false;
-            let radious = 1;
-            let explorationTile = {};
+    getExplorationTile(centerTile) {
+        let foundGoodCell = false;
+        let radious = 1;
+        let explorationTile = {};
 
-            // while (foundGoodCell === false) {
-            // console.log('radious', radious);
-            const adjacentCells = [
-                { x: centerTile.x - radious, y: centerTile.y },
-                { x: centerTile.x + radious, y: centerTile.y },
-                { x: centerTile.x, y: centerTile.y - radious },
-                { x: centerTile.x, y: centerTile.y + radious },
-                {
-                    x: centerTile.x - radious,
-                    y: centerTile.y - radious,
-                },
-                {
-                    x: centerTile.x - radious,
-                    y: centerTile.y + radious,
-                },
-                {
-                    x: centerTile.x + radious,
-                    y: centerTile.y - radious,
-                },
-                {
-                    x: centerTile.x + radious,
-                    y: centerTile.y + radious,
-                },
-            ];
+        // while (foundGoodCell === false) {
+        // console.log('radious', radious);
+        const adjacentCells = [
+            { x: centerTile.x - radious, y: centerTile.y },
+            { x: centerTile.x + radious, y: centerTile.y },
+            { x: centerTile.x, y: centerTile.y - radious },
+            { x: centerTile.x, y: centerTile.y + radious },
+            {
+                x: centerTile.x - radious,
+                y: centerTile.y - radious,
+            },
+            {
+                x: centerTile.x - radious,
+                y: centerTile.y + radious,
+            },
+            {
+                x: centerTile.x + radious,
+                y: centerTile.y - radious,
+            },
+            {
+                x: centerTile.x + radious,
+                y: centerTile.y + radious,
+            },
+        ];
 
-            for (let i = 0; i < adjacentCells.length && !foundGoodCell; i++) {
-                if (
-                    adjacentCells[i].x >= 0 &&
-                    adjacentCells[i].x < this.map.width &&
-                    adjacentCells[i].y >= 0 &&
-                    adjacentCells[i].y < this.map.height &&
-                    this.map.matrix[adjacentCells[i].x][adjacentCells[i].y]
-                        .type !== 'wall'
-                ) {
-                    explorationTile = {
-                        x: adjacentCells[i].x,
-                        y: adjacentCells[i].y,
-                    };
-                    foundGoodCell = true;
-                }
+        for (let i = 0; i < adjacentCells.length && !foundGoodCell; i++) {
+            if (
+                adjacentCells[i].x >= 0 &&
+                adjacentCells[i].x < this.map.width &&
+                adjacentCells[i].y >= 0 &&
+                adjacentCells[i].y < this.map.height &&
+                this.map.matrix[adjacentCells[i].x][adjacentCells[i].y].type !==
+                    'wall' &&
+                adjacentCells[i].x !== this.me.x &&
+                adjacentCells[i].y !== this.me.y
+            ) {
+                explorationTile = {
+                    x: adjacentCells[i].x,
+                    y: adjacentCells[i].y,
+                };
+                foundGoodCell = true;
             }
-            // radious++;
-            // }
+        }
+        // radious++;
+        // }
 
-            resolve(explorationTile);
-        });
+        return explorationTile;
     }
 
     getBestOptions(parcels) {
