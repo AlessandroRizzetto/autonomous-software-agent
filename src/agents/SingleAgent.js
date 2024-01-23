@@ -311,7 +311,6 @@ export default class SingleAgent extends Agent {
                     throw new Error('MOVE_FAILED');
                 }
             }
-            // await new Promise((resolve) => setImmediate(resolve)); // wait for the next tick
         }
 
         return true;
@@ -344,6 +343,7 @@ export default class SingleAgent extends Agent {
         console.log('BEST OPTION', bestOption);
 
         if (!bestOption) {
+            await this.putdown();
             setTimeout(() => {
                 this.eventEmitter.emit('explore');
             });
@@ -406,7 +406,6 @@ export default class SingleAgent extends Agent {
 
     async explore() {
         const centerTile = this.getCenterTile();
-
         const explorationTile = this.getExplorationTile(centerTile);
 
         console.log('EXPLORATION GOAL', explorationTile);
@@ -419,7 +418,14 @@ export default class SingleAgent extends Agent {
 
         if (explorationPlan) {
             try {
-                await this.executeRandomPlan(explorationPlan);
+                const explorationChoice = Math.random();
+                if (explorationChoice < 0.5) {
+                    console.log('EXPLORATION PLAN');
+                    await this.executeRandomPlan(explorationPlan);
+                } else {
+                    console.log('EXPLORATION RANDOM');
+                    await this.exploreRandomly();
+                }
             } catch (error) {
                 console.log('EXPLORATION PLAN FAILED');
                 this.changeQuadrant = true;
@@ -677,7 +683,7 @@ export default class SingleAgent extends Agent {
     getNearbyParcels() {
         let nearByTiles = this.getNearbyTiles();
         let nearByParcels = new Map();
-        let minReward = 1;
+        let minReward = +process.env.MIN_NEAR_PARCEL_REWARD || 1;
         for (const parcel of this.visibleParcels.values()) {
             if (!parcel.carriedBy && !this.parcelsCarriedNow.has(parcel.id)) {
                 for (const tile of nearByTiles) {
@@ -697,7 +703,7 @@ export default class SingleAgent extends Agent {
     }
 
     getNearbyTiles() {
-        let maxDistance = 2;
+        let maxDistance = +process.env.MAX_NEAR_PARCEL_DISTANCE || 2;
         let nearByTiles = [{ x: this.me.x, y: this.me.y }];
 
         for (let i = 1; i <= maxDistance; i++) {
