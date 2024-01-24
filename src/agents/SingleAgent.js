@@ -154,12 +154,13 @@ export default class SingleAgent extends Agent {
             x: option.parcel.x,
             y: option.parcel.y,
         };
-        // const planInfo = `${this.me.x},${this.me.y},${goal.x},${goal.y},toParcel`;
 
-        // if (this.planLibrary.has(planInfo)) {
-        //     console.log('USING PLAN ALREADY GENERATED');
-        //     return this.planLibrary.get(planInfo);
-        // }
+        const planInfo = `${this.me.x},${this.me.y},${goal.x},${goal.y},toParcel`;
+
+        if (this.planLibrary.has(planInfo)) {
+            console.log('USING PLAN ALREADY GENERATED');
+            return this.planLibrary.get(planInfo);
+        }
 
         let plan = await generatePlanWithPddl(
             this.visibleParcels,
@@ -174,9 +175,9 @@ export default class SingleAgent extends Agent {
             this.me
         );
 
-        // if (plan) {
-        //     this.planLibrary.set(planInfo, plan);
-        // }
+        if (plan) {
+            this.planLibrary.set(planInfo, plan);
+        }
 
         return plan;
     }
@@ -196,12 +197,12 @@ export default class SingleAgent extends Agent {
             score: this.me.score,
         };
 
-        // const planInfo = `${futureMe.x},${futureMe.y},${goal.x},${goal.y},fromParcel`;
+        const planInfo = `${futureMe.x},${futureMe.y},${goal.x},${goal.y},fromParcel`;
 
-        // if (this.planLibrary.has(planInfo)) {
-        //     console.log('USING PLAN ALREADY GENERATED');
-        //     return this.planLibrary.get(planInfo);
-        // }
+        if (this.planLibrary.has(planInfo)) {
+            console.log('USING PLAN ALREADY GENERATED');
+            return this.planLibrary.get(planInfo);
+        }
 
         let plan = await generatePlanWithPddl(
             this.visibleParcels,
@@ -218,19 +219,19 @@ export default class SingleAgent extends Agent {
 
         if (plan) {
             plan = plan.filter((step) => step.action !== 'pickup');
-            // this.planLibrary.set(planInfo, plan);
+            this.planLibrary.set(planInfo, plan);
         }
 
         return plan;
     }
 
     async generateExplorationPlan(center) {
-        // const planInfo = `${this.me.x},${this.me.y},${center.x},${center.y},ToCenter`;
+        const planInfo = `${this.me.x},${this.me.y},${center.x},${center.y},ToCenter`;
 
-        // if (this.planLibrary.has(planInfo)) {
-        //     console.log('USING PLAN ALREADY GENERATED');
-        //     return this.planLibrary.get(planInfo);
-        // }
+        if (this.planLibrary.has(planInfo)) {
+            console.log('USING PLAN ALREADY GENERATED');
+            return this.planLibrary.get(planInfo);
+        }
 
         let plan = await generatePlanWithPddl(
             this.visibleParcels,
@@ -245,9 +246,9 @@ export default class SingleAgent extends Agent {
             this.me
         );
 
-        // if (plan) {
-        //     this.planLibrary.set(planInfo, plan);
-        // }
+        if (plan) {
+            this.planLibrary.set(planInfo, plan);
+        }
 
         return plan;
     }
