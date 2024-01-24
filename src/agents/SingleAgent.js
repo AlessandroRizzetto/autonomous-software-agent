@@ -14,6 +14,7 @@ export default class SingleAgent extends Agent {
         this.planLibrary = new Map();
         this.options = [];
         this.parcelsCarriedNow = new Map();
+        this.parcelsReachability = new Map();
         this.isRoadOpen = false;
         this.changeQuadrant = false;
         this.nearestParcelStrategy = false;
@@ -30,7 +31,6 @@ export default class SingleAgent extends Agent {
 
         this.eventEmitter.on('generatePlan', this.play.bind(this));
         this.eventEmitter.on('restart', this.play.bind(this));
-        this.eventEmitter.on('moveFailed', this.play.bind(this));
         this.eventEmitter.on('parcelsOnTheWay', this.play.bind(this));
     }
 
@@ -154,7 +154,7 @@ export default class SingleAgent extends Agent {
             x: option.parcel.x,
             y: option.parcel.y,
         };
-        const planInfo = `${this.me.x},${this.me.y},${goal.x},${goal.y},toParcel`;
+        // const planInfo = `${this.me.x},${this.me.y},${goal.x},${goal.y},toParcel`;
 
         // if (this.planLibrary.has(planInfo)) {
         //     console.log('USING PLAN ALREADY GENERATED');
@@ -174,9 +174,9 @@ export default class SingleAgent extends Agent {
             this.me
         );
 
-        if (plan) {
-            this.planLibrary.set(planInfo, plan);
-        }
+        // if (plan) {
+        //     this.planLibrary.set(planInfo, plan);
+        // }
 
         return plan;
     }
@@ -196,7 +196,7 @@ export default class SingleAgent extends Agent {
             score: this.me.score,
         };
 
-        const planInfo = `${futureMe.x},${futureMe.y},${goal.x},${goal.y},fromParcel`;
+        // const planInfo = `${futureMe.x},${futureMe.y},${goal.x},${goal.y},fromParcel`;
 
         // if (this.planLibrary.has(planInfo)) {
         //     console.log('USING PLAN ALREADY GENERATED');
@@ -217,22 +217,21 @@ export default class SingleAgent extends Agent {
         );
 
         if (plan) {
-            this.planLibrary.set(planInfo, plan);
             plan = plan.filter((step) => step.action !== 'pickup');
+            // this.planLibrary.set(planInfo, plan);
         }
 
         return plan;
     }
 
     async generateExplorationPlan(center) {
-        // const planInfo = `${this.me.x},${this.me.y},${center.x},${
-        //     center.y
-        // },${false}`;
+        // const planInfo = `${this.me.x},${this.me.y},${center.x},${center.y},ToCenter`;
 
         // if (this.planLibrary.has(planInfo)) {
         //     console.log('USING PLAN ALREADY GENERATED');
         //     return this.planLibrary.get(planInfo);
-        // } else {
+        // }
+
         let plan = await generatePlanWithPddl(
             this.visibleParcels,
             this.visibleAgents,
@@ -251,14 +250,13 @@ export default class SingleAgent extends Agent {
         // }
 
         return plan;
-        // }
     }
 
     async executePlan(plan) {
         let actions = this.getActionsFromPlan(plan);
         console.log('ACTIONS', actions);
         for (const action of actions) {
-            let nearbyParcelsNow = this.getNearbyParcels();
+            let nearbyParcelsNow = await this.getNearbyParcels();
             if (action !== this.PossibleActions.Pickup) {
                 for (const nearByParcel of nearbyParcelsNow.values()) {
                     console.log(nearByParcel);
@@ -291,8 +289,7 @@ export default class SingleAgent extends Agent {
                     });
                 }
 
-                let nearbyParcelsNow = this.getNearbyParcels();
-
+                let nearbyParcelsNow = await this.getNearbyParcels();
                 if (nearbyParcelsNow.size != 0) {
                     console.log(nearbyParcelsNow);
                     this.nearestParcelStrategy = true;
@@ -302,8 +299,11 @@ export default class SingleAgent extends Agent {
                 }
             } else if (action === this.PossibleActions.Putdown) {
                 let droppedParcels = await this.putdown();
-                console.log('Putdown');
+                console.log('Putdown', droppedParcels);
                 this.parcelsCarriedNow.clear();
+                for (const droppedParcel of droppedParcels) {
+                    this.parcelsReachability.delete(droppedParcel.id);
+                }
             } else {
                 let result = await this.move(action);
                 console.log('Move', action);
@@ -320,7 +320,7 @@ export default class SingleAgent extends Agent {
         let actions = this.getActionsFromPlan(plan);
         console.log('ACTIONS', actions);
         for (const action of actions) {
-            let nearbyParcelsNow = this.getNearbyParcels();
+            let nearbyParcelsNow = await this.getNearbyParcels();
             if (nearbyParcelsNow.size != 0) {
                 console.log(nearbyParcelsNow);
                 this.changeQuadrant = true;
@@ -343,7 +343,7 @@ export default class SingleAgent extends Agent {
         console.log('BEST OPTION', bestOption);
 
         if (!bestOption) {
-            await this.putdown();
+            await this.explore();
             setTimeout(() => {
                 this.eventEmitter.emit('explore');
             });
@@ -353,6 +353,7 @@ export default class SingleAgent extends Agent {
         const planToReachParcel = await this.generatePlanToParcel(bestOption);
 
         if (!planToReachParcel) {
+            await this.explore();
             setTimeout(() => {
                 this.eventEmitter.emit('restart');
             });
@@ -391,8 +392,9 @@ export default class SingleAgent extends Agent {
         } catch (error) {
             if (error.message === 'MOVE_FAILED') {
                 console.log('MOVE_FAILED');
+                await this.explore();
                 setTimeout(() => {
-                    this.eventEmitter.emit('moveFailed');
+                    this.eventEmitter.emit('restart');
                 });
             } else {
                 setTimeout(() => {
@@ -442,7 +444,6 @@ export default class SingleAgent extends Agent {
         console.log('EXPLORING RANDOMLY');
 
         for (let i = 0; i < numberOfActions; i++) {
-            //console.log(`STEP ${i}`);
             if (this.visibleParcels.size !== 0) {
                 return;
             }
@@ -493,9 +494,6 @@ export default class SingleAgent extends Agent {
 
     getCenterTile() {
         const { x, y } = { x: this.me.x, y: this.me.y };
-        //console.log('Calculating center tile');
-        //console.log('map width', this.map.width);
-        //console.log('map height', this.map.height);
         const quadrants = ['11', '12', '21', '22'];
         const centerTile = {};
 
@@ -556,7 +554,7 @@ export default class SingleAgent extends Agent {
         let explorationTile = {};
 
         // while (foundGoodCell === false) {
-        // console.log('radious', radious);
+        console.log('radious', radious);
         const adjacentCells = [
             { x: centerTile.x - radious, y: centerTile.y },
             { x: centerTile.x + radious, y: centerTile.y },
@@ -680,12 +678,16 @@ export default class SingleAgent extends Agent {
         return options;
     }
 
-    getNearbyParcels() {
+    async getNearbyParcels() {
         let nearByTiles = this.getNearbyTiles();
         let nearByParcels = new Map();
         let minReward = +process.env.MIN_NEAR_PARCEL_REWARD || 1;
         for (const parcel of this.visibleParcels.values()) {
-            if (!parcel.carriedBy && !this.parcelsCarriedNow.has(parcel.id)) {
+            if (
+                !parcel.carriedBy &&
+                !this.parcelsCarriedNow.has(parcel.id) &&
+                (await this.isParcelReachable(parcel))
+            ) {
                 for (const tile of nearByTiles) {
                     if (
                         parcel.x === tile.x &&
@@ -700,6 +702,29 @@ export default class SingleAgent extends Agent {
 
         console.log('TOTAL NEARBY PARCELS', nearByParcels);
         return nearByParcels;
+    }
+
+    async isParcelReachable(parcel) {
+        const option = {
+            parcel,
+        };
+
+        if (this.parcelsReachability.has(parcel.id)) {
+            const isParcelReachable = this.parcelsReachability.get(parcel.id);
+            return isParcelReachable;
+        } else {
+            const plan = await this.generatePlanToParcel(option);
+
+            if (plan) {
+                console.log('Is parcel reachable', true);
+                this.parcelsReachability.set(parcel.id, true);
+                return true;
+            } else {
+                console.log('Is parcel reachable', false);
+                this.parcelsReachability.set(parcel.id, false);
+                return false;
+            }
+        }
     }
 
     getNearbyTiles() {
