@@ -3,12 +3,12 @@ import { EventEmitter } from 'events';
 import { generatePlanWithPddl } from '../pddl/PDDLParser.js';
 import { DeliverooApi } from '@unitn-asa/deliveroo-js-client';
 
-export default class SingleAgent extends Agent {
+export default class DoubleAgentA extends Agent {
     constructor(options) {
         super(options);
         this.apiService = new DeliverooApi(
-            process.env.HOST1,
-            process.env.TOKEN1
+            process.env.HOST2,
+            process.env.TOKEN2
         );
         super.registerListeners();
         this.me = {};
@@ -16,6 +16,9 @@ export default class SingleAgent extends Agent {
         this.config = {};
         this.visibleAgents = new Map();
         this.visibleParcels = new Map();
+        this.alreadySentParcels = new Map();
+        this.teamParcels = new Map();
+        this.teamAgents = new Map();
         this.deliveryTiles = [];
         this.planLibrary = new Map();
         this.options = [];
@@ -25,6 +28,7 @@ export default class SingleAgent extends Agent {
         this.changeQuadrant = false;
         this.nearestParcelStrategy = false;
         this.eventEmitter = new EventEmitter();
+        this.teamMate = 'cda062c83d1';
 
         this.eventEmitter.on('explore', async () => {
             while (this.visibleParcels.size === 0) {
@@ -78,7 +82,74 @@ export default class SingleAgent extends Agent {
                 y: Math.round(me.y),
                 score: me.score,
             };
+            // console.log('me', this.me);
         });
+    }
+
+    // this method receives the messages from the other teamMate
+    onMsg() {
+        this.apiService.onMsg((id, name, msg, reply) => {
+            if (id === this.teamMate) {
+                // messageDecoding(msg);
+                console.log('MESSAGE RECEIVED FROM TEAMMATE');
+                msg = this.messageDecoder(msg);
+                console.log('MESSAGE', msg);
+            }
+        });
+    }
+
+    say(msg) {
+        this.apiService.say(this.teamMate, msg);
+        console.log('MESSAGE SENT TO TEAMMATE');
+    }
+
+    messageDecoder(msg) {
+        console.log('MESSAGE DECODING');
+        //If the message refers to parcels
+        if (msg.split('$')[0] == 'p') {
+            //Check every parcel and update the parcels of this agent
+            for (const parcel of msg.split('$')[1].split('_')) {
+                var parcelValues = parcel.split('.');
+                this.teamParcels.set(parcelValues[0], {
+                    id: parcelValues[0],
+                    x: Number(parcelValues[1]),
+                    y: Number(parcelValues[2]),
+                    carriedBy: null,
+                    reward: Number(parcelValues[4]),
+                });
+            }
+            //If the message refers to agents
+        } else if (msg.split('$')[0] == 'a') {
+            //Check every agent and update the agents of this agent
+            for (const agent of msg.split('$')[1].split('_')) {
+                var agentValues = agent.split('.');
+                this.teamAgents.set(agentValues[0], {
+                    id: agentValues[0],
+                    x: Number(agentValues[1]),
+                    y: Number(agentValues[2]),
+                });
+            }
+        }
+        return this.teamParcels;
+    }
+
+    messageEncoder(msg) {
+        console.log('MESSAGE ENCODING');
+        var message = 'p$';
+        for (const p of msg) {
+            message +=
+                p.id +
+                '.' +
+                p.x +
+                '.' +
+                p.y +
+                '.' +
+                p.carriedBy +
+                '.' +
+                p.reward +
+                '_';
+        }
+        return message.slice(0, -1);
     }
 
     // this method lists all the agents that you can see
@@ -101,6 +172,23 @@ export default class SingleAgent extends Agent {
                 parcel.x = Math.round(parcel.x);
                 parcel.y = Math.round(parcel.y);
                 this.visibleParcels.set(parcel.id, parcel);
+            }
+            const parcelsToSay = []; // list of parcels to send to the other agent if the distance is less more than 5
+            if (this.visibleParcels.size > 0) {
+                for (const parcel of this.visibleParcels.values()) {
+                    if (
+                        this.distance(this.me, parcel) > 5 &&
+                        !parcel.carriedBy &&
+                        !this.alreadySentParcels.has(parcel.id)
+                    ) {
+                        // TODO: invece della distanza usare il quadrante di appartenenza
+                        parcelsToSay.push(parcel);
+                        this.alreadySentParcels.set(parcel.id, parcel);
+                    }
+                }
+            }
+            if (parcelsToSay.length > 0) {
+                this.say(this.messageEncoder(parcelsToSay));
             }
         });
     }
@@ -348,6 +436,14 @@ export default class SingleAgent extends Agent {
         const bestOption = this.options.shift();
 
         console.log('BEST OPTION', bestOption);
+        // sand the message to the other agent
+        // if (bestOption) {
+        //     const message = {
+        //         parcel: bestOption.parcel,
+        //         deliveryTile: bestOption.deliveryTile,
+        //     };
+        //     this.say(JSON.stringify(message));
+        // }
 
         if (!bestOption) {
             await this.explore();

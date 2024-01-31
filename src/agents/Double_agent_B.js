@@ -3,12 +3,12 @@ import { EventEmitter } from 'events';
 import { generatePlanWithPddl } from '../pddl/PDDLParser.js';
 import { DeliverooApi } from '@unitn-asa/deliveroo-js-client';
 
-export default class SingleAgent extends Agent {
+export default class DoubleAgentB extends Agent {
     constructor(options) {
         super(options);
         this.apiService = new DeliverooApi(
-            process.env.HOST1,
-            process.env.TOKEN1
+            process.env.HOST2,
+            process.env.TOKEN2
         );
         super.registerListeners();
         this.me = {};
@@ -16,6 +16,10 @@ export default class SingleAgent extends Agent {
         this.config = {};
         this.visibleAgents = new Map();
         this.visibleParcels = new Map();
+        this.alreadySentParcels = new Map(); // list of parcels that I already sent to the other agent
+        this.teamParcels = new Map(); // list of parcels that the other agent communicated to me
+        this.alreadySentAgents = new Map(); // list of agents that I already sent to the other agent
+        this.teamAgents = new Map(); // list of agents that the other agent communicated to me
         this.deliveryTiles = [];
         this.planLibrary = new Map();
         this.options = [];
@@ -25,6 +29,7 @@ export default class SingleAgent extends Agent {
         this.changeQuadrant = false;
         this.nearestParcelStrategy = false;
         this.eventEmitter = new EventEmitter();
+        this.teamMate = 'a062c83d1fc'; // id of the other agent teamMate
 
         this.eventEmitter.on('explore', async () => {
             while (this.visibleParcels.size === 0) {
@@ -78,7 +83,80 @@ export default class SingleAgent extends Agent {
                 y: Math.round(me.y),
                 score: me.score,
             };
+            // console.log('me', this.me);
         });
+    }
+
+    // this method receives the messages from the other teamMate
+    onMsg() {
+        this.apiService.onMsg((id, name, msg, reply) => {
+            if (id === this.teamMate) {
+                // messageDecoding(msg);
+                console.log('MESSAGE RECEIVED FROM TEAMMATE');
+                msg = this.decodeMessageAndUpdateState(msg);
+                console.log('MESSAGE', msg);
+            }
+            // if (reply)
+            //     try { reply(answer) } catch { (error) => console.error(error) }
+        });
+    }
+
+    say(msg) {
+        this.apiService.say(this.teamMate, msg);
+        console.log('MESSAGE SENT TO TEAMMATE');
+    }
+
+    messageEncoder(items, itemType) {
+        console.log('ENCODING OF THE MESSAGE');
+
+        let message = itemType + '$';
+        const propertyOrder =
+            itemType === 'p'
+                ? ['id', 'x', 'y', 'carriedBy', 'reward']
+                : ['id', 'x', 'y'];
+
+        for (const item of items) {
+            message += propertyOrder.map((prop) => item[prop]).join('.') + '_';
+        }
+
+        return message.slice(0, -1);
+    }
+
+    decodeMessageAndUpdateState(message) {
+        console.log('DECODING OF THE MESSAGE');
+
+        const messageType = message.split('$')[0];
+        const messageContent = message.split('$')[1];
+
+        if (messageType === 'p') {
+            // Se il messaggio riguarda pacchi
+            for (const parcelInfo of messageContent.split('_')) {
+                const [parcelId, x, y, , reward] = parcelInfo.split('.');
+                this.updateParcelState(
+                    parcelId,
+                    Number(x),
+                    Number(y),
+                    null,
+                    Number(reward)
+                );
+            }
+        } else if (messageType === 'a') {
+            // Se il messaggio riguarda agenti
+            for (const agentInfo of messageContent.split('_')) {
+                const [agentId, x, y] = agentInfo.split('.');
+                this.updateAgentState(agentId, Number(x), Number(y));
+            }
+        }
+
+        return this.teamParcels;
+    }
+
+    updateParcelState(id, x, y, carriedBy, reward) {
+        this.teamParcels.set(id, { id, x, y, carriedBy, reward });
+    }
+
+    updateAgentState(id, x, y) {
+        this.teamAgents.set(id, { id, x, y });
     }
 
     // this method lists all the agents that you can see
@@ -90,6 +168,12 @@ export default class SingleAgent extends Agent {
                 agent.y = Math.round(agent.y);
                 this.visibleAgents.set(agent.id, agent);
             }
+            this.say(
+                this.messageEncoder(
+                    Array.from(this.visibleAgents.values()),
+                    'a'
+                )
+            ); // send the message to the other agent with the list of ALL agents that you can see
         });
     }
 
@@ -101,6 +185,23 @@ export default class SingleAgent extends Agent {
                 parcel.x = Math.round(parcel.x);
                 parcel.y = Math.round(parcel.y);
                 this.visibleParcels.set(parcel.id, parcel);
+            }
+            const parcelsToSay = []; // list of parcels to send to the other agent if the distance is less more than 5
+            if (this.visibleParcels.size > 0) {
+                for (const parcel of this.visibleParcels.values()) {
+                    if (
+                        this.distance(this.me, parcel) > 5 &&
+                        !parcel.carriedBy &&
+                        !this.alreadySentParcels.has(parcel.id)
+                    ) {
+                        // TODO: invece della distanza usare il quadrante di appartenenza
+                        parcelsToSay.push(parcel);
+                        this.alreadySentParcels.set(parcel.id, parcel);
+                    }
+                }
+            }
+            if (parcelsToSay.length > 0) {
+                this.say(this.messageEncoder(parcelsToSay, 'p'));
             }
         });
     }
@@ -348,6 +449,14 @@ export default class SingleAgent extends Agent {
         const bestOption = this.options.shift();
 
         console.log('BEST OPTION', bestOption);
+        // sand the message to the other agent
+        // if (bestOption) {
+        //     const message = {
+        //         parcel: bestOption.parcel,
+        //         deliveryTile: bestOption.deliveryTile,
+        //     };
+        //     this.say(JSON.stringify(message));
+        // }
 
         if (!bestOption) {
             await this.explore();
