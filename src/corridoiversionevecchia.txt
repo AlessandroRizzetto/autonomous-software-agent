@@ -1,0 +1,92 @@
+// OLD VERSION
+    // isCorridor() {
+    //     // check the delivery tiles and the parcels to understand if the map is made of corridors or not
+
+    //     const adjacentCells = [];
+    //     let numberOfCorridors = 0;
+    //     let numberOfDeliveryCorridors = 0;
+    //     let numberOfSpawnCorridors = 0;
+    //     for (const cell of this.map.cells) {
+    //         let walkableAdjacentCells = 0;
+    //         for (let i = -1; i <= 1; i++) {
+    //             for (let j = -1; j <= 1; j++) {
+    //                 // check if the cell is walkable and if it has 2 walkable adjacent cells
+    //                 if (
+    //                     cell.x + i >= 0 &&
+    //                     cell.x + i < this.map.width &&
+    //                     cell.y + j >= 0 &&
+    //                     cell.y + j < this.map.height &&
+    //                     this.map.matrix[cell.x + i][cell.y + j].type !== 'wall'
+    //                 ) {
+    //                     let adjacentCell = {
+    //                         x: cell.x + i,
+    //                         y: cell.y + j,
+    //                     };
+    //                     // console.log('adjacentCell', adjacentCell);
+    //                     for (let k = -1; k <= 1; k++) {
+    //                         for (let l = -1; l <= 1; l++) {
+    //                             if (
+    //                                 adjacentCell.x + k >= 0 &&
+    //                                 adjacentCell.x + k < this.map.width &&
+    //                                 adjacentCell.y + l >= 0 &&
+    //                                 adjacentCell.y + l < this.map.height &&
+    //                                 this.map.matrix[adjacentCell.x + k][
+    //                                     adjacentCell.y + l
+    //                                 ].type !== 'wall'
+    //                             ) {
+    //                                 // console.log(
+    //                                 //     this.map.matrix[adjacentCell.x + k][
+    //                                 //         adjacentCell.y + l
+    //                                 //     ].type,
+    //                                 //     'walkable cell'
+    //                                 // );
+    //                                 walkableAdjacentCells++;
+    //                             } else {
+    //                                 // console.log(
+    //                                 //     this.map.matrix[adjacentCell.x + k][
+    //                                 //         adjacentCell.y + l
+    //                                 //     ].type
+    //                                 // );
+    //                             }
+    //                         }
+    //                     }
+    //                     // console.log(
+    //                     //     'walkableAdjacentCells',
+    //                     //     walkableAdjacentCells
+    //                     // );
+    //                     if (walkableAdjacentCells == 3) {
+    //                         numberOfCorridors++;
+    //                         if (cell.delivery) {
+    //                             numberOfDeliveryCorridors++;
+    //                         }
+    //                         if (cell.parcelSpawner) {
+    //                             numberOfSpawnCorridors++;
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+
+    //         // console.log('deliveryTiles', this.deliveryTiles);
+    //     }
+    //     console.log(
+    //         'number of corridors',
+    //         numberOfCorridors,
+    //         'number of delivery tiles',
+    //         this.deliveryTiles.length
+    //     );
+    //     console.log(
+    //         'number of delivery corridors',
+    //         numberOfDeliveryCorridors,
+    //         'number of spawn corridors',
+    //         numberOfSpawnCorridors
+    //     );
+    //     if (numberOfCorridors === this.deliveryTiles.length) {
+    //         console.log('THE MAP IS MADE OF CORRIDORS');
+
+    //         this.isCorridorMap = true;
+    //     } else {
+    //         console.log('THE MAP IS NOT MADE OF CORRIDORS');
+    //         this.isCorridorMap = false;
+    //     }
+    // }

@@ -106,7 +106,6 @@
             (me ?me)
             (parcel ?parcel)
             (tile ?tile)
-            (delivery ?tile)
             (at ?me ?tile)
             (carriedBy ?parcel ?me)
         )

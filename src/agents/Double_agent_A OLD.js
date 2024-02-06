@@ -2,8 +2,6 @@ import Agent from './Agent.js';
 import { EventEmitter } from 'events';
 import { generatePlanWithPddl } from '../pddl/PDDLParser.js';
 import { DeliverooApi } from '@unitn-asa/deliveroo-js-client';
-import { lstat } from 'fs';
-import { dir } from 'console';
 
 export default class DoubleAgentA extends Agent {
     constructor(options) {
@@ -19,7 +17,6 @@ export default class DoubleAgentA extends Agent {
         this.config = {};
         this.visibleAgents = new Map();
         this.visibleParcels = new Map();
-        this.blackListedParcels = new Set();
         this.alreadySentParcels = new Map(); // list of parcels that I already sent to the other agent
         this.teamParcels = new Map(); // list of parcels that the other agent communicated to me
         this.alreadySentAgents = new Map(); // list of agents that I already sent to the other agent
@@ -33,16 +30,7 @@ export default class DoubleAgentA extends Agent {
         this.changeQuadrant = false;
         this.nearestParcelStrategy = false;
         this.eventEmitter = new EventEmitter();
-        this.teamMate = {
-            id: 'cda062c83d1',
-            name: 'DoubleAgentB',
-            x: 0,
-            y: 0,
-            score: 0,
-        };
-        this.agentRole = 'supporter'; // role of the agent, winner or supporter
-        this.corridorsInfo = [];
-        this.checkpointTale = {};
+        this.teamMate = 'cda062c83d1'; // id of the other agent teamMate
 
         this.eventEmitter.on('explore', async () => {
             while (this.visibleParcels.size === 0) {
@@ -125,27 +113,18 @@ export default class DoubleAgentA extends Agent {
 
     messageEncoder(items, itemType) {
         console.log('ENCODING OF THE MESSAGE');
-        let propertyOrder = [];
+
         let message = itemType + '$';
-        // const propertyOrder =
-        //     itemType === 'p'
-        //         ? ['id', 'x', 'y', 'carriedBy', 'reward']
-        //         : ['id', 'x', 'y'];
-        if (itemType === 'parcels') {
-            propertyOrder = ['id', 'x', 'y', 'carriedBy', 'reward'];
-        } else if (itemType === 'agents') {
-            propertyOrder = ['id', 'x', 'y'];
-        } else if (itemType === 'Strategyinformations') {
-            propertyOrder = ['checkpointTaleX', 'checkpointTaleY'];
-        } else if (itemType === 'mentalState') {
-            propertyOrder = ['id', 'x', 'y', 'carriedBy', 'reward'];
-        }
+        const propertyOrder =
+            itemType === 'p'
+                ? ['id', 'x', 'y', 'carriedBy', 'reward']
+                : ['id', 'x', 'y'];
 
         for (const item of items) {
             message += propertyOrder.map((prop) => item[prop]).join('.') + '_';
         }
 
-        return message.slice(0, -1); // remove the last underscore
+        return message.slice(0, -1);
     }
 
     decodeMessageAndUpdateState(message) {
@@ -154,7 +133,7 @@ export default class DoubleAgentA extends Agent {
         const messageType = message.split('$')[0];
         const messageContent = message.split('$')[1];
 
-        if (messageType === 'parcels') {
+        if (messageType === 'p') {
             // Se il messaggio riguarda pacchi
             for (const parcelInfo of messageContent.split('_')) {
                 const [parcelId, x, y, , reward] = parcelInfo.split('.');
@@ -166,38 +145,15 @@ export default class DoubleAgentA extends Agent {
                     Number(reward)
                 );
             }
-        } else if (messageType === 'agents') {
+        } else if (messageType === 'a') {
             // Se il messaggio riguarda agenti
             for (const agentInfo of messageContent.split('_')) {
                 const [agentId, x, y] = agentInfo.split('.');
                 this.updateAgentState(agentId, Number(x), Number(y));
             }
-        } else if (messageType === 'Strategyinformations') {
-            // Se il messaggio riguarda informazioni
-            for (const information of messageContent.split('_')) {
-                const [checkpointTaleX, checkpointTaleY] =
-                    information.split('.');
-                this.checkpointTale = {
-                    x: Number(checkpointTaleX),
-                    y: Number(checkpointTaleY),
-                };
-            }
-        } else if (messageType === 'mentalState') {
-            // Se il messaggio riguarda lo stato mentale
-            for (const mentalState of messageContent.split('_')) {
-                const [agentId, x, y, carriedBy, reward] =
-                    mentalState.split('.');
-                // TO DO: fare qualcosa con queste informazioni
-            }
-        } else if (messageType === 'mateInfo') {
-            // Se il messaggio riguarda la posizione del compagno
-            for (const matePosition of messageContent.split('_')) {
-                const [x, y, score] = matePosition.split('.');
-                this.teamMate.x = Number(x);
-                this.teamMate.y = Number(y);
-                this.teamMate.score = Number(score);
-            }
         }
+
+        return this.teamParcels;
     }
 
     updateParcelState(id, x, y, carriedBy, reward) {
@@ -217,13 +173,12 @@ export default class DoubleAgentA extends Agent {
                 agent.y = Math.round(agent.y);
                 this.visibleAgents.set(agent.id, agent);
             }
-            // TO DO: da scommentare
-            // this.say(
-            //     this.messageEncoder(
-            //         Array.from(this.visibleAgents.values()),
-            //         'agents'
-            //     )
-            // ); // send the message to the other agent with the list of ALL agents that you can see
+            this.say(
+                this.messageEncoder(
+                    Array.from(this.visibleAgents.values()),
+                    'a'
+                )
+            ); // send the message to the other agent with the list of ALL agents that you can see
         });
     }
 
@@ -250,10 +205,9 @@ export default class DoubleAgentA extends Agent {
                     }
                 }
             }
-            // TO DO: da scommentare
-            // if (parcelsToSay.length > 0) {
-            //     this.say(this.messageEncoder(parcelsToSay, 'parcels'));
-            // }
+            if (parcelsToSay.length > 0) {
+                this.say(this.messageEncoder(parcelsToSay, 'p'));
+            }
         });
     }
 
@@ -282,175 +236,104 @@ export default class DoubleAgentA extends Agent {
                     this.map.matrix[cell.x][cell.y] = {
                         type: 'delivery',
                         value: 0,
-                        parcelSpawner: false,
                     };
-                } else {
-                    if (cell.parcelSpawner) {
-                        this.map.matrix[cell.x][cell.y] = {
-                            type: 'normal',
-                            value: 0,
-                            parcelSpawner: true,
-                        };
-                    } else {
-                        this.map.matrix[cell.x][cell.y] = {
-                            type: 'normal',
-                            value: 0,
-                            parcelSpawner: false,
-                        };
-                    }
                 }
+                if (cell.parcelSpawner) {
+                    this.map.matrix[cell.x][cell.y] = {
+                        type: 'parcelSpawner',
+                        value: 0,
+                    };
+                } else
+                    this.map.matrix[cell.x][cell.y] = {
+                        type: 'normal',
+                        value: 0,
+                    };
             });
-            // console.log('MAP', cells);
-            // this.isCorridor()
-            this.corridorFounder();
+            console.log('MAP', cells);
+            this.isCorridor();
         });
     }
 
-    corridorFounder() {
-        const corridorCounts = {
-            delivery: 0,
-            parcelSpawner: 0,
-            total: 0,
-        };
+    isCorridor() {
+        // check the delivery tiles and the parcels to understand if the map is made of corridors or not
 
-        const directions = [
-            { dx: 0, dy: 1 }, // Right
-            { dx: 1, dy: 0 }, // Down
-            { dx: 0, dy: -1 }, // Left
-            { dx: -1, dy: 0 }, // Up
-        ];
-
-        const isWalkable = (x, y) => {
-            return (
-                x >= 0 &&
-                x < this.map.height &&
-                y >= 0 &&
-                y < this.map.width &&
-                this.map.matrix[x][y].type !== 'wall'
-            );
-        };
-
-        const exploreCorridor = (startX, startY, direction) => {
-            let currentX = startX;
-            let currentY = startY;
-            let corridorLength = 0;
-
-            while (isWalkable(currentX, currentY)) {
-                corridorLength++;
-
-                // Check if there's only one walkable direction
-                let validDirections = 0;
-                let nextX, nextY;
-
-                for (const dir of directions) {
+        const adjacentCells = [];
+        let numberOfCorridors = 0;
+        for (const deliveryTile of this.deliveryTiles) {
+            // check if unless six of the eight adjacent cells are walls
+            let walkableAdjacentCells = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
                     if (
-                        isWalkable(currentX + dir.dx, currentY + dir.dy) &&
-                        (dir.dx !== -direction.dx || dir.dy !== -direction.dy)
+                        deliveryTile.x + i >= 0 &&
+                        deliveryTile.x + i < this.map.width &&
+                        deliveryTile.y + j >= 0 &&
+                        deliveryTile.y + j < this.map.height &&
+                        this.map.matrix[deliveryTile.x + i][deliveryTile.y + j]
+                            .type === 'normal'
                     ) {
-                        validDirections++;
-                        nextX = currentX + dir.dx;
-                        nextY = currentY + dir.dy;
-                    }
-                }
-
-                if (validDirections === 1) {
-                    currentX = nextX;
-                    currentY = nextY;
-                } else {
-                    // currentX -= direction.dx; // if we want the last cell in the corridor (not the junction)
-                    // currentY -= direction.dy;
-                    var lastWalkableCell = { x: currentX, y: currentY };
-                    break; // Junction or dead end
-                }
-            }
-
-            return {
-                startX,
-                startY,
-                direction,
-                length: corridorLength,
-                lastWalkableCell,
-            };
-        };
-
-        for (let i = 0; i < this.map.height; i++) {
-            for (let j = 0; j < this.map.width; j++) {
-                const cell = this.map.matrix[i][j];
-
-                if (cell.type === 'delivery' || cell.parcelSpawner === true) {
-                    for (const dir of directions) {
-                        if (isWalkable(i + dir.dx, j + dir.dy)) {
-                            // Start exploring the corridor in the given direction
-                            const corridorInfo = exploreCorridor(
-                                i + dir.dx,
-                                j + dir.dy,
-                                dir
-                            );
-
-                            // Check if the corridor is long enough
-                            if (corridorInfo.length >= 4) {
-                                corridorCounts.total++;
-                                if (cell.type === 'delivery') {
-                                    corridorCounts.delivery++;
-                                    corridorInfo.class = 'delivery';
-                                } else if (cell.parcelSpawner === true) {
-                                    corridorCounts.parcelSpawner++;
-                                    corridorInfo.class = 'parcelSpawner';
+                        let adjacentCell = {
+                            x: deliveryTile.x + i,
+                            y: deliveryTile.y + j,
+                        };
+                        // console.log('adjacentCell', adjacentCell);
+                        for (let k = -1; k <= 1; k++) {
+                            for (let l = -1; l <= 1; l++) {
+                                if (
+                                    adjacentCell.x + k >= 0 &&
+                                    adjacentCell.x + k < this.map.width &&
+                                    adjacentCell.y + l >= 0 &&
+                                    adjacentCell.y + l < this.map.height &&
+                                    this.map.matrix[adjacentCell.x + k][
+                                        adjacentCell.y + l
+                                    ].type !== 'wall'
+                                ) {
+                                    // console.log(
+                                    //     this.map.matrix[adjacentCell.x + k][
+                                    //         adjacentCell.y + l
+                                    //     ].type,
+                                    //     'walkable cell'
+                                    // );
+                                    walkableAdjacentCells++;
+                                } else {
+                                    // console.log(
+                                    //     this.map.matrix[adjacentCell.x + k][
+                                    //         adjacentCell.y + l
+                                    //     ].type
+                                    // );
                                 }
-                                this.corridorsInfo.push(corridorInfo);
-
-                                console.log(
-                                    `Corridor found (${corridorInfo.class}) from (${corridorInfo.startX}, ${corridorInfo.startY}) in direction (${corridorInfo.direction.dx}, ${corridorInfo.direction.dy}) with length ${corridorInfo.length} and last walkable cell at (${corridorInfo.lastWalkableCell.x}, ${corridorInfo.lastWalkableCell.y})`
-                                );
                             }
+                        }
+                        // console.log(
+                        //     'walkableAdjacentCells',
+                        //     walkableAdjacentCells
+                        // );
+                        if (walkableAdjacentCells == 3) {
+                            numberOfCorridors++;
                         }
                     }
                 }
             }
-        }
-        // console.log('Corridors Info:', this.corridorsInfo);
-        console.log('Corridors from Delivery:', corridorCounts.delivery);
-        console.log(
-            'Corridors from Parcel Spawner:',
-            corridorCounts.parcelSpawner
-        );
-        console.log('Total Corridors:', corridorCounts.total);
-        if (corridorCounts.total > 0) {
-            this.isCorridorMap = true;
-            console.log('YOU ARE IN A CORRIDOR MAP');
-            this.corridorStrategy();
-        }
-    }
 
-    corridorStrategy() {
-        // TO DO: verify if there is a path beetween the two agents
-        // define the central nearest delivery corridor
-        let nearestDistance = 1000;
-        for (const corridor of this.corridorsInfo) {
-            if (corridor.class === 'delivery') {
-                let TmpDistance = this.distance(
-                    this.me,
-                    corridor.lastWalkableCell
+            // console.log('deliveryTiles', this.deliveryTiles);
+            if (numberOfCorridors === this.deliveryTiles.length) {
+                console.log('THE MAP IS MADE OF CORRIDORS');
+                console.log(
+                    'number of corridors',
+                    numberOfCorridors,
+                    'number of delivery tiles',
+                    this.deliveryTiles.length
                 );
-                if (TmpDistance < nearestDistance) {
-                    nearestDistance = TmpDistance;
-                    this.checkpointTale = corridor.lastWalkableCell;
-                }
+                this.isCorridorMap = true;
             }
         }
-        console.log('CHECKPOINT TALE', this.checkpointTale);
-        if (this.agentRole === 'winner') {
-            // if the agent is the winner, it has to pickup the parcels from the end of the corridor and leave them at the delivery tiles
-            this.say(
-                this.messageEncoder(
-                    [this.checkpointTale],
-                    'Strategyinformations'
-                )
-            );
-        }
-        if (this.agentRole === 'supporter') {
-            // if the agent is the supporter, it has to pickup the parcels from the corridor and leave them at the end of the corridor
-        }
+        console.log('THE MAP IS NOT MADE OF CORRIDORS');
+        this.isCorridorMap = false;
+    }
+
+    corridorSetting() {
+        // this method sets the double agent plan to explore the map in a corridor way coordinated with the other agent
+        // understand if the map is made of corridors or not
     }
 
     // this method lists all the tiles on which you can move
@@ -476,10 +359,10 @@ export default class DoubleAgentA extends Agent {
 
         const planInfo = `${this.me.x},${this.me.y},${goal.x},${goal.y},toParcel`;
 
-        // if (this.planLibrary.has(planInfo)) {          // TO DO: da scommentare
-        //     console.log('USING PLAN ALREADY GENERATED');
-        //     return this.planLibrary.get(planInfo);
-        // }
+        if (this.planLibrary.has(planInfo)) {
+            console.log('USING PLAN ALREADY GENERATED');
+            return this.planLibrary.get(planInfo);
+        }
 
         let plan = await generatePlanWithPddl(
             this.visibleParcels,
@@ -623,7 +506,6 @@ export default class DoubleAgentA extends Agent {
                 this.parcelsCarriedNow.clear();
                 for (const droppedParcel of droppedParcels) {
                     this.parcelsReachability.delete(droppedParcel.id);
-                    this.blackListedParcels.add(droppedParcel.id);
                 }
             } else {
                 let result = await this.move(action);
@@ -659,10 +541,9 @@ export default class DoubleAgentA extends Agent {
     async play() {
         this.options = this.getBestOptions(this.visibleParcels);
 
-        const bestOption = this.options.shift(); // shift the first element of the array and return it
+        const bestOption = this.options.shift();
 
-        // console.log('BEST OPTION', bestOption);
-        console.log('blackListedParcels', this.blackListedParcels);
+        console.log('BEST OPTION', bestOption);
         // sand the message to the other agent
         // if (bestOption) {
         //     const message = {
@@ -679,31 +560,8 @@ export default class DoubleAgentA extends Agent {
             });
             return;
         }
-        if (
-            this.isCorridorMap === true &&
-            this.agentRole === 'supporter' &&
-            !this.blackListedParcels.has(bestOption.parcel.id)
-        ) {
-            console.log('CORRIDOR STRATEGY');
-            console.log('bestOption', bestOption);
-            console.log('checkpointTale', this.checkpointTale);
-            bestOption.deliveryTile.x = this.checkpointTale.x;
-            bestOption.deliveryTile.y = this.checkpointTale.y;
-            var planToReachParcel = await this.generatePlanToParcel(bestOption);
-            var fullPlan = planToReachParcel;
 
-            var planToReachDeliveryTile = await this.generatePlanFromParcel(
-                bestOption
-            );
-        } else if (this.isCorridorMap === false) {
-            console.log('NORMAL STRATEGY');
-            var planToReachParcel = await this.generatePlanToParcel(bestOption);
-            var fullPlan = planToReachParcel;
-
-            var planToReachDeliveryTile = await this.generatePlanFromParcel(
-                bestOption
-            );
-        }
+        const planToReachParcel = await this.generatePlanToParcel(bestOption);
 
         if (!planToReachParcel) {
             await this.explore();
@@ -712,6 +570,12 @@ export default class DoubleAgentA extends Agent {
             });
             return;
         }
+
+        let fullPlan = planToReachParcel;
+
+        const planToReachDeliveryTile = await this.generatePlanFromParcel(
+            bestOption
+        );
 
         if (!planToReachDeliveryTile) {
             setTimeout(() => {
@@ -726,7 +590,6 @@ export default class DoubleAgentA extends Agent {
             console.log('EXECUTING FULL PLAN');
             const delivered = await this.executePlan(fullPlan);
             if (delivered === true) {
-                this.blackListedParcels.add(bestOption.parcel.id);
                 setTimeout(() => {
                     console.log('DELIVERED PARCEL');
                     this.eventEmitter.emit('restart');
@@ -959,8 +822,7 @@ export default class DoubleAgentA extends Agent {
             if (
                 !parcel.carriedBy ||
                 (this.me.id === parcel.carriedBy &&
-                    !this.parcelsCarriedNow.has(parcel.id) &&
-                    !this.blackListedParcels.has(parcel.id)) // updated to avoid to pick up the same parcel
+                    !this.parcelsCarriedNow.has(parcel.id))
             ) {
                 for (const deliveryTile of this.deliveryTiles) {
                     const distanceFromMeToParcel = this.distance(
@@ -1035,7 +897,6 @@ export default class DoubleAgentA extends Agent {
             if (
                 !parcel.carriedBy &&
                 !this.parcelsCarriedNow.has(parcel.id) &&
-                !this.blackListedParcels.has(parcel.id) && // updated to avoid to pick up the same parcel
                 (await this.isParcelReachable(parcel))
             ) {
                 for (const tile of nearByTiles) {
@@ -1050,7 +911,7 @@ export default class DoubleAgentA extends Agent {
             }
         }
 
-        // console.log('TOTAL NEARBY PARCELS', nearByParcels);
+        console.log('TOTAL NEARBY PARCELS', nearByParcels);
         return nearByParcels;
     }
 
@@ -1063,21 +924,16 @@ export default class DoubleAgentA extends Agent {
             const isParcelReachable = this.parcelsReachability.get(parcel.id);
             return isParcelReachable;
         } else {
-            if (!this.blackListedParcels.has(parcel.id)) {
-                console.log(
-                    'GENERATING PLAN TO UNDESTAND IF PARCEL IS REACHABLE'
-                );
-                const plan = await this.generatePlanToParcel(option);
+            const plan = await this.generatePlanToParcel(option);
 
-                if (plan) {
-                    console.log('Is parcel reachable', true);
-                    this.parcelsReachability.set(parcel.id, true);
-                    return true;
-                } else {
-                    console.log('Is parcel reachable', false);
-                    this.parcelsReachability.set(parcel.id, false);
-                    return false;
-                }
+            if (plan) {
+                console.log('Is parcel reachable', true);
+                this.parcelsReachability.set(parcel.id, true);
+                return true;
+            } else {
+                console.log('Is parcel reachable', false);
+                this.parcelsReachability.set(parcel.id, false);
+                return false;
             }
         }
     }
