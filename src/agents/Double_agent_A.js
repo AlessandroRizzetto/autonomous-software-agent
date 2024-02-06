@@ -12,9 +12,9 @@ export default class DoubleAgentA extends Agent {
             process.env.HOST2,
             process.env.TOKEN2
         );
-        super.registerListeners();
         this.me = {};
         this.map = {};
+        this.initialNearestDeliveryTileDistance = null;
         this.isCorridorMap = false;
         this.config = {};
         this.visibleAgents = new Map();
@@ -39,8 +39,9 @@ export default class DoubleAgentA extends Agent {
             x: 0,
             y: 0,
             score: 0,
+            distanceFromBestDeliveryTile: 0,
         };
-        this.agentRole = 'supporter'; // role of the agent, winner or supporter
+        this.agentRole = 'singleAgent'; // role of the agent, winner or supporter
         this.corridorsInfo = [];
         this.checkpointTale = {};
 
@@ -97,6 +98,9 @@ export default class DoubleAgentA extends Agent {
                 score: me.score,
             };
             // console.log('me', this.me);
+            this.initialNearestDeliveryTileDistance =
+                this.findNearestDeliveryTile();
+            this.corridorFounder();
         });
     }
 
@@ -108,6 +112,16 @@ export default class DoubleAgentA extends Agent {
                 console.log('MESSAGE RECEIVED FROM TEAMMATE');
                 msg = this.decodeMessageAndUpdateState(msg);
                 console.log('MESSAGE', msg);
+                if (
+                    !this.setupIsCompleted &&
+                    this.initialNearestDeliveryTileDistance <
+                        this.teamMate.distanceFromBestDeliveryTile
+                ) {
+                    this.agentRole = 'winner';
+                } else {
+                    this.agentRole = 'supporter';
+                }
+                this.setupIsCompleted = true;
             }
             if (reply)
                 try {
@@ -124,13 +138,14 @@ export default class DoubleAgentA extends Agent {
     }
 
     messageEncoder(items, itemType) {
-        console.log('ENCODING OF THE MESSAGE');
+        // console.log('ENCODING OF THE MESSAGE');
         let propertyOrder = [];
         let message = itemType + '$';
         // const propertyOrder =
         //     itemType === 'p'
         //         ? ['id', 'x', 'y', 'carriedBy', 'reward']
         //         : ['id', 'x', 'y'];
+        console.log('ITEMS', items);
         if (itemType === 'parcels') {
             propertyOrder = ['id', 'x', 'y', 'carriedBy', 'reward'];
         } else if (itemType === 'agents') {
@@ -139,6 +154,8 @@ export default class DoubleAgentA extends Agent {
             propertyOrder = ['checkpointTaleX', 'checkpointTaleY'];
         } else if (itemType === 'mentalState') {
             propertyOrder = ['id', 'x', 'y', 'carriedBy', 'reward'];
+        } else if (itemType === 'mateInfo') {
+            propertyOrder = ['x', 'y', 'score', 'distanceFromBestDeliveryTile'];
         }
 
         for (const item of items) {
@@ -149,7 +166,7 @@ export default class DoubleAgentA extends Agent {
     }
 
     decodeMessageAndUpdateState(message) {
-        console.log('DECODING OF THE MESSAGE');
+        // console.log('DECODING OF THE MESSAGE');
 
         const messageType = message.split('$')[0];
         const messageContent = message.split('$')[1];
@@ -192,10 +209,14 @@ export default class DoubleAgentA extends Agent {
         } else if (messageType === 'mateInfo') {
             // Se il messaggio riguarda la posizione del compagno
             for (const matePosition of messageContent.split('_')) {
-                const [x, y, score] = matePosition.split('.');
+                const [x, y, score, distanceFromBestDeliveryTile] =
+                    matePosition.split('.');
                 this.teamMate.x = Number(x);
                 this.teamMate.y = Number(y);
                 this.teamMate.score = Number(score);
+                this.teamMate.distanceFromBestDeliveryTile = Number(
+                    distanceFromBestDeliveryTile
+                );
             }
         }
     }
@@ -216,8 +237,22 @@ export default class DoubleAgentA extends Agent {
                 agent.x = Math.round(agent.x);
                 agent.y = Math.round(agent.y);
                 this.visibleAgents.set(agent.id, agent);
+                if (agent.id === this.teamMate.id && !this.setupIsCompleted) {
+                    this.say(
+                        // TO DO: sbagliato
+                        this.messageEncoder(
+                            [
+                                me.x,
+                                me.y,
+                                me.score,
+                                this.initialNearestDeliveryTileDistance,
+                            ],
+                            'mateInfo'
+                        )
+                    );
+                }
             }
-            // TO DO: da scommentare
+
             this.say(
                 this.messageEncoder(
                     Array.from(this.visibleAgents.values()),
@@ -275,7 +310,7 @@ export default class DoubleAgentA extends Agent {
                     };
                 }
             }
-
+            console.log('OUTPUT', this.deliveryTiles);
             cells.forEach((cell) => {
                 if (cell.delivery) {
                     this.deliveryTiles.push({ x: cell.x, y: cell.y });
@@ -284,6 +319,7 @@ export default class DoubleAgentA extends Agent {
                         value: 0,
                         parcelSpawner: false,
                     };
+                    console.log('DELIVERY TILE', this.deliveryTiles);
                 } else {
                     if (cell.parcelSpawner) {
                         this.map.matrix[cell.x][cell.y] = {
@@ -300,9 +336,11 @@ export default class DoubleAgentA extends Agent {
                     }
                 }
             });
+
+            console.log(this.deliveryTiles);
+
             // console.log('MAP', cells);
             // this.isCorridor()
-            this.corridorFounder();
         });
     }
 
@@ -349,10 +387,10 @@ export default class DoubleAgentA extends Agent {
                         (dir.dx !== -direction.dx || dir.dy !== -direction.dy)
                     ) {
                         validDirections++;
-                        console.log('VALID DIRECTIONS', validDirections);
+                        // console.log('VALID DIRECTIONS', validDirections);
                         nextX = currentX + dir.dx;
                         nextY = currentY + dir.dy;
-                        console.log('NEXT X', nextX, 'NEXT Y', nextY);
+                        // console.log('NEXT X', nextX, 'NEXT Y', nextY);
                     }
                 }
 
@@ -379,7 +417,6 @@ export default class DoubleAgentA extends Agent {
         for (let i = 0; i < this.map.height; i++) {
             for (let j = 0; j < this.map.width; j++) {
                 const cell = this.map.matrix[i][j];
-                console.log('CELL', cell);
                 if (cell.type === 'delivery') {
                     for (const dir of directions) {
                         if (isWalkable(i + dir.dx, j + dir.dy)) {
@@ -419,7 +456,8 @@ export default class DoubleAgentA extends Agent {
             corridorCounts.parcelSpawner
         );
         console.log('Total Corridors:', corridorCounts.total);
-        if (corridorCounts.total > 0) {
+        console.log('Delivery Tiles:', this.deliveryTiles.length);
+        if (corridorCounts.total >= this.deliveryTiles.length / 2) {
             this.isCorridorMap = true;
             console.log('YOU ARE IN A CORRIDOR MAP');
             this.corridorStrategy();
@@ -427,6 +465,17 @@ export default class DoubleAgentA extends Agent {
             this.isCorridorMap = false;
             console.log('YOU ARE IN A NORMAL MAP');
         }
+    }
+
+    findNearestDeliveryTile() {
+        console.log(this.deliveryTiles);
+        const distances = this.deliveryTiles.map((tile) =>
+            this.distance(this.me, tile)
+        );
+
+        console.log('DISTANCES', distances[0]);
+        distances.sort((a, b) => a - b);
+        return distances[0];
     }
 
     corridorStrategy() {
@@ -446,18 +495,41 @@ export default class DoubleAgentA extends Agent {
             }
         }
         console.log('CHECKPOINT TALE', this.checkpointTale);
-        if (this.agentRole === 'winner') {
-            // if the agent is the winner, it has to pickup the parcels from the end of the corridor and leave them at the delivery tiles
-            this.say(
-                this.messageEncoder(
-                    [this.checkpointTale],
-                    'Strategyinformations'
-                )
-            );
+        // send the message to the other agent
+
+        this.say(
+            this.messageEncoder(
+                [
+                    {
+                        x: this.me.x,
+                        y: this.me.y,
+                        score: this.me.score,
+                        distanceFromBestDeliveryTile:
+                            this.initialNearestDeliveryTileDistance,
+                    },
+                ],
+                'mateInfo'
+            )
+        );
+
+        if (
+            this.initialNearestDeliveryTileDistance <
+            this.teamMate.distanceFromBestDeliveryTile
+        ) {
+            this.agentRole = 'winner';
         }
-        if (this.agentRole === 'supporter') {
-            // if the agent is the supporter, it has to pickup the parcels from the corridor and leave them at the end of the corridor
-        }
+        // if (this.agentRole === 'winner') {
+        //     // if the agent is the winner, it has to pickup the parcels from the end of the corridor and leave them at the delivery tiles
+        //     this.say(
+        //         this.messageEncoder(
+        //             [this.checkpointTale],
+        //             'Strategyinformations'
+        //         )
+        //     );
+        // }
+        // if (this.agentRole === 'supporter') {
+        //     // if the agent is the supporter, it has to pickup the parcels from the corridor and leave them at the end of the corridor
+        // }
     }
 
     // this method lists all the tiles on which you can move

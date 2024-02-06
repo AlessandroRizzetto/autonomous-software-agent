@@ -23,11 +23,11 @@ export default class Agent {
     registerListeners() {
         this.onConnect();
         this.onDisconnect();
+        this.onYou();
         this.onMap();
         this.onConfig();
         this.onTile();
         this.onNotTile();
-        this.onYou();
         this.onAgentsSensing();
         this.onParcelsSensing();
         this.onMsg();
