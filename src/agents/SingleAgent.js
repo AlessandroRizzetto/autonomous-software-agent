@@ -140,6 +140,8 @@ export default class SingleAgent extends Agent {
         });
     }
 
+    onMsg() {}
+
     // this method lists all the tiles on which you can move
     onTile() {
         // this.apiService.onTile((x, y, isDeliveryTile) => {

@@ -218,12 +218,12 @@ export default class DoubleAgentA extends Agent {
                 this.visibleAgents.set(agent.id, agent);
             }
             // TO DO: da scommentare
-            // this.say(
-            //     this.messageEncoder(
-            //         Array.from(this.visibleAgents.values()),
-            //         'agents'
-            //     )
-            // ); // send the message to the other agent with the list of ALL agents that you can see
+            this.say(
+                this.messageEncoder(
+                    Array.from(this.visibleAgents.values()),
+                    'agents'
+                )
+            ); // send the message to the other agent with the list of ALL agents that you can see
         });
     }
 
@@ -307,6 +307,7 @@ export default class DoubleAgentA extends Agent {
     }
 
     corridorFounder() {
+        console.log('CORRIDOR FOUNDER');
         const corridorCounts = {
             delivery: 0,
             parcelSpawner: 0,
@@ -348,8 +349,10 @@ export default class DoubleAgentA extends Agent {
                         (dir.dx !== -direction.dx || dir.dy !== -direction.dy)
                     ) {
                         validDirections++;
+                        console.log('VALID DIRECTIONS', validDirections);
                         nextX = currentX + dir.dx;
                         nextY = currentY + dir.dy;
+                        console.log('NEXT X', nextX, 'NEXT Y', nextY);
                     }
                 }
 
@@ -363,7 +366,7 @@ export default class DoubleAgentA extends Agent {
                     break; // Junction or dead end
                 }
             }
-
+            console.log('Corridor found', corridorLength);
             return {
                 startX,
                 startY,
@@ -376,8 +379,8 @@ export default class DoubleAgentA extends Agent {
         for (let i = 0; i < this.map.height; i++) {
             for (let j = 0; j < this.map.width; j++) {
                 const cell = this.map.matrix[i][j];
-
-                if (cell.type === 'delivery' || cell.parcelSpawner === true) {
+                console.log('CELL', cell);
+                if (cell.type === 'delivery') {
                     for (const dir of directions) {
                         if (isWalkable(i + dir.dx, j + dir.dy)) {
                             // Start exploring the corridor in the given direction
@@ -386,10 +389,11 @@ export default class DoubleAgentA extends Agent {
                                 j + dir.dy,
                                 dir
                             );
-
+                            // console.log('Corridor Info', corridorInfo);
                             // Check if the corridor is long enough
                             if (corridorInfo.length >= 4) {
                                 corridorCounts.total++;
+                                // console.log('Corridor found', corridorInfo);
                                 if (cell.type === 'delivery') {
                                     corridorCounts.delivery++;
                                     corridorInfo.class = 'delivery';
@@ -419,6 +423,9 @@ export default class DoubleAgentA extends Agent {
             this.isCorridorMap = true;
             console.log('YOU ARE IN A CORRIDOR MAP');
             this.corridorStrategy();
+        } else {
+            this.isCorridorMap = false;
+            console.log('YOU ARE IN A NORMAL MAP');
         }
     }
 
