@@ -9,8 +9,8 @@ export default class DoubleAgentA extends Agent {
     constructor(options) {
         super(options);
         this.apiService = new DeliverooApi(
-            process.env.HOST2,
-            process.env.TOKEN2
+            process.env.HOST3,
+            process.env.TOKEN3
         );
         super.registerListeners();
         this.me = {};
@@ -35,14 +35,13 @@ export default class DoubleAgentA extends Agent {
         this.nearestParcelStrategy = false;
         this.eventEmitter = new EventEmitter();
         this.teamMate = {
-            id: 'cda062c83d1',
+            id: 'a062c83d1fc',
             name: 'DoubleAgentB',
             x: 0,
             y: 0,
             score: 0,
-            distanceFromBestDeliveryTile: 0,
         };
-        this.agentRole = 'singleAgent'; // role of the agent, winner or supporter
+        this.agentRole = 'supporter'; // role of the agent, winner or supporter
         this.corridorsInfo = [];
         this.checkpointTale = {};
 
@@ -110,16 +109,6 @@ export default class DoubleAgentA extends Agent {
                 console.log('MESSAGE RECEIVED FROM TEAMMATE');
                 msg = this.decodeMessageAndUpdateState(msg);
                 console.log('MESSAGE', msg);
-                if (
-                    !this.setupIsCompleted &&
-                    this.initialNearestDeliveryTileDistance <
-                        this.teamMate.distanceFromBestDeliveryTile
-                ) {
-                    this.agentRole = 'winner';
-                } else {
-                    this.agentRole = 'supporter';
-                }
-                this.setupIsCompleted = true;
             }
             if (reply)
                 try {
@@ -132,14 +121,17 @@ export default class DoubleAgentA extends Agent {
 
     say(msg) {
         this.apiService.say(this.teamMate, msg);
-        // console.log('MESSAGE SENT TO TEAMMATE');
+        console.log('MESSAGE SENT TO TEAMMATE');
     }
 
     messageEncoder(items, itemType) {
         // console.log('ENCODING OF THE MESSAGE');
         let propertyOrder = [];
         let message = itemType + '$';
-        // console.log('ITEMS', items);
+        // const propertyOrder =
+        //     itemType === 'p'
+        //         ? ['id', 'x', 'y', 'carriedBy', 'reward']
+        //         : ['id', 'x', 'y'];
         if (itemType === 'parcels') {
             propertyOrder = ['id', 'x', 'y', 'carriedBy', 'reward'];
         } else if (itemType === 'agents') {
@@ -148,8 +140,6 @@ export default class DoubleAgentA extends Agent {
             propertyOrder = ['checkpointTaleX', 'checkpointTaleY'];
         } else if (itemType === 'mentalState') {
             propertyOrder = ['id', 'x', 'y', 'carriedBy', 'reward'];
-        } else if (itemType === 'mateInfo') {
-            propertyOrder = ['x', 'y', 'score', 'distanceFromBestDeliveryTile'];
         }
 
         for (const item of items) {
@@ -203,14 +193,10 @@ export default class DoubleAgentA extends Agent {
         } else if (messageType === 'mateInfo') {
             // Se il messaggio riguarda la posizione del compagno
             for (const matePosition of messageContent.split('_')) {
-                const [x, y, score, distanceFromBestDeliveryTile] =
-                    matePosition.split('.');
+                const [x, y, score] = matePosition.split('.');
                 this.teamMate.x = Number(x);
                 this.teamMate.y = Number(y);
                 this.teamMate.score = Number(score);
-                this.teamMate.distanceFromBestDeliveryTile = Number(
-                    distanceFromBestDeliveryTile
-                );
             }
         }
     }
@@ -231,25 +217,8 @@ export default class DoubleAgentA extends Agent {
                 agent.x = Math.round(agent.x);
                 agent.y = Math.round(agent.y);
                 this.visibleAgents.set(agent.id, agent);
-                if (agent.id === this.teamMate.id && !this.setupIsCompleted) {
-                    this.say(
-                        // TO DO: sbagliato
-                        this.messageEncoder(
-                            [
-                                {
-                                    x: this.me.x,
-                                    y: this.me.y,
-                                    score: this.me.score,
-                                    distanceFromBestDeliveryTile:
-                                        this.initialNearestDeliveryTileDistance,
-                                },
-                            ],
-                            'mateInfo'
-                        )
-                    );
-                }
             }
-
+            // TO DO: da scommentare
             this.say(
                 this.messageEncoder(
                     Array.from(this.visibleAgents.values()),
@@ -268,7 +237,6 @@ export default class DoubleAgentA extends Agent {
                 parcel.y = Math.round(parcel.y);
                 this.visibleParcels.set(parcel.id, parcel);
             }
-            // console.log('VISIBLE PARCELS', this.visibleParcels);
             const parcelsToSay = []; // list of parcels to send to the other agent if the distance is less more than 5
             if (this.visibleParcels.size > 0) {
                 for (const parcel of this.visibleParcels.values()) {
@@ -298,6 +266,7 @@ export default class DoubleAgentA extends Agent {
             this.map.height = height;
             this.map.cells = cells;
             this.map.matrix = [];
+            this.deliveryTiles = [];
 
             for (let i = 0; i < this.map.height; i++) {
                 this.map.matrix[i] = [];
@@ -308,6 +277,7 @@ export default class DoubleAgentA extends Agent {
                     };
                 }
             }
+
             cells.forEach((cell) => {
                 if (cell.delivery) {
                     this.deliveryTiles.push({ x: cell.x, y: cell.y });
@@ -332,12 +302,8 @@ export default class DoubleAgentA extends Agent {
                     }
                 }
             });
-
-            // console.log(this.deliveryTiles);
-
             // console.log('MAP', cells);
-            this.initialNearestDeliveryTileDistance =
-                this.findNearestDeliveryTile();
+            // this.isCorridor()
             this.corridorFounder();
         });
     }
@@ -385,10 +351,10 @@ export default class DoubleAgentA extends Agent {
                         (dir.dx !== -direction.dx || dir.dy !== -direction.dy)
                     ) {
                         validDirections++;
-                        // console.log('VALID DIRECTIONS', validDirections);
+                        console.log('VALID DIRECTIONS', validDirections);
                         nextX = currentX + dir.dx;
                         nextY = currentY + dir.dy;
-                        // console.log('NEXT X', nextX, 'NEXT Y', nextY);
+                        console.log('NEXT X', nextX, 'NEXT Y', nextY);
                     }
                 }
 
@@ -402,7 +368,7 @@ export default class DoubleAgentA extends Agent {
                     break; // Junction or dead end
                 }
             }
-            // console.log('Corridor found', corridorLength);
+            console.log('Corridor found', corridorLength);
             return {
                 startX,
                 startY,
@@ -454,8 +420,7 @@ export default class DoubleAgentA extends Agent {
             corridorCounts.parcelSpawner
         );
         console.log('Total Corridors:', corridorCounts.total);
-        console.log('Delivery Tiles:', this.deliveryTiles.length);
-        if (corridorCounts.total >= this.deliveryTiles.length / 4) {
+        if (corridorCounts.total > 0) {
             this.isCorridorMap = true;
             console.log('YOU ARE IN A CORRIDOR MAP');
             this.corridorStrategy();
@@ -465,20 +430,8 @@ export default class DoubleAgentA extends Agent {
         }
     }
 
-    findNearestDeliveryTile() {
-        // console.log(this.deliveryTiles);
-        const distances = this.deliveryTiles.map((tile) =>
-            this.distance(this.me, tile)
-        );
-
-        // console.log('DISTANCES', distances[0]);
-        distances.sort((a, b) => a - b);
-        return distances[0];
-    }
-
     corridorStrategy() {
         // TO DO: verify if there is a path beetween the two agents
-
         // define the central nearest delivery corridor
         let nearestDistance = 1000;
         for (const corridor of this.corridorsInfo) {
@@ -494,28 +447,17 @@ export default class DoubleAgentA extends Agent {
             }
         }
         console.log('CHECKPOINT TALE', this.checkpointTale);
-        // send the message to the other agent
-
-        this.say(
-            this.messageEncoder(
-                [
-                    {
-                        x: this.me.x,
-                        y: this.me.y,
-                        score: this.me.score,
-                        distanceFromBestDeliveryTile:
-                            this.initialNearestDeliveryTileDistance,
-                    },
-                ],
-                'mateInfo'
-            )
-        );
-
-        if (
-            this.initialNearestDeliveryTileDistance <
-            this.teamMate.distanceFromBestDeliveryTile
-        ) {
-            this.agentRole = 'winner';
+        if (this.agentRole === 'winner') {
+            // if the agent is the winner, it has to pickup the parcels from the end of the corridor and leave them at the delivery tiles
+            this.say(
+                this.messageEncoder(
+                    [this.checkpointTale],
+                    'Strategyinformations'
+                )
+            );
+        }
+        if (this.agentRole === 'supporter') {
+            // if the agent is the supporter, it has to pickup the parcels from the corridor and leave them at the end of the corridor
         }
     }
 
@@ -640,7 +582,7 @@ export default class DoubleAgentA extends Agent {
 
     async executePlan(plan) {
         let actions = this.getActionsFromPlan(plan);
-        // console.log('ACTIONS', actions);
+        console.log('ACTIONS', actions);
         for (const action of actions) {
             let nearbyParcelsNow = await this.getNearbyParcels();
             if (action !== this.PossibleActions.Pickup) {
@@ -705,7 +647,7 @@ export default class DoubleAgentA extends Agent {
 
     async executeRandomPlan(plan) {
         let actions = this.getActionsFromPlan(plan);
-        // console.log('ACTIONS', actions);
+        console.log('ACTIONS', actions);
         for (const action of actions) {
             let nearbyParcelsNow = await this.getNearbyParcels();
             if (nearbyParcelsNow.size != 0) {
@@ -723,16 +665,22 @@ export default class DoubleAgentA extends Agent {
     }
 
     async play() {
-        console.log('PLAY', this.agentRole);
         this.options = this.getBestOptions(this.visibleParcels);
 
         const bestOption = this.options.shift(); // shift the first element of the array and return it
-        // console.log('BEST OPTION', bestOption);
 
+        // console.log('BEST OPTION', bestOption);
         console.log('blackListedParcels', this.blackListedParcels);
+        // sand the message to the other agent
+        // if (bestOption) {
+        //     const message = {
+        //         parcel: bestOption.parcel,
+        //         deliveryTile: bestOption.deliveryTile,
+        //     };
+        //     this.say(JSON.stringify(message));
+        // }
 
         if (!bestOption) {
-            // console.log('NO BEST OPTION', bestOption);
             await this.explore();
             setTimeout(() => {
                 this.eventEmitter.emit('explore');
@@ -755,11 +703,7 @@ export default class DoubleAgentA extends Agent {
             var planToReachDeliveryTile = await this.generatePlanFromParcel(
                 bestOption
             );
-        } else if (
-            this.isCorridorMap === false ||
-            this.agentRole === 'singleAgent' ||
-            this.agentRole === 'winner'
-        ) {
+        } else if (this.isCorridorMap === false) {
             console.log('NORMAL STRATEGY');
             var planToReachParcel = await this.generatePlanToParcel(bestOption);
             var fullPlan = planToReachParcel;
@@ -1087,7 +1031,7 @@ export default class DoubleAgentA extends Agent {
                 );
             });
         }
-        // console.log('OPTIONS', options);
+
         return options;
     }
 
