@@ -70,6 +70,7 @@ export default class SingleAgent extends Agent {
     }
 
     onYou() {
+        console.log('ON YOU');
         this.apiService.onYou(async (me) => {
             this.me = {
                 id: me.id,
