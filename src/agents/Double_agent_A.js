@@ -805,7 +805,7 @@ export default class DoubleAgentA extends Agent {
         console.log('PLAY', this.agentRole);
         this.options = this.getBestOptions(this.visibleParcels);
 
-        const bestOption = this.options.shift(); // shift the first element of the array and return it
+        var bestOption = this.options.shift(); // shift the first element of the array and return it
         // console.log('BEST OPTION', bestOption);
 
         console.log('blackListedParcels', this.blackListedParcels);
@@ -827,9 +827,30 @@ export default class DoubleAgentA extends Agent {
         ) {
             console.log('CORRIDOR STRATEGY');
             console.log('bestOption', bestOption);
+            console.log(bestOption.parcel.x, bestOption.parcel.y);
             console.log('checkpointTale', this.checkpointTale);
-            bestOption.deliveryTile.x = this.checkpointTale.x;
-            bestOption.deliveryTile.y = this.checkpointTale.y;
+            if (
+                this.checkpointTale.x !== bestOption.parcel.x &&
+                this.checkpointTale.y !== bestOption.parcel.y
+            ) {
+                bestOption.deliveryTile.x = this.checkpointTale.x;
+                bestOption.deliveryTile.y = this.checkpointTale.y;
+            }
+            if (true) {
+                //TO DO: da implementare la condizione per cui il pacchetto è raggiungibile
+                for (const option of this.options) {
+                    // itero su tutte le opzioni
+                    if (
+                        this.me.x === option.parcel.x &&
+                        !this.blackListedParcels.has(option.parcel.id)
+                    ) {
+                        bestOption = option;
+                        bestOption.deliveryTile.x = bestOption.parcel.x;
+                        bestOption.deliveryTile.y = bestOption.parcel.y + 2;
+                        console.log('changed bestOption', bestOption);
+                    }
+                }
+            }
             var planToReachParcel = await this.generatePlanToParcel(bestOption);
             var fullPlan = planToReachParcel;
 

@@ -5,7 +5,7 @@ import { DeliverooApi } from '@unitn-asa/deliveroo-js-client';
 import { lstat } from 'fs';
 import { dir } from 'console';
 
-export default class DoubleAgentB extends Agent {
+export default class DoubleAgentA extends Agent {
     constructor(options) {
         super(options);
         // this.apiService = new DeliverooApi(
@@ -21,7 +21,6 @@ export default class DoubleAgentB extends Agent {
         this.visibleAgents = new Map();
         this.visibleParcels = new Map();
         this.blackListedParcels = new Set();
-        this.blackListedTiles = new Set();
         this.alreadySentParcels = new Map(); // list of parcels that I already sent to the other agent
         this.teamParcels = new Map(); // list of parcels that the other agent communicated to me
         this.alreadySentAgents = new Map(); // list of agents that I already sent to the other agent
@@ -36,8 +35,8 @@ export default class DoubleAgentB extends Agent {
         this.nearestParcelStrategy = false;
         this.eventEmitter = new EventEmitter();
         this.teamMate = {
-            id: process.env.AGENTA,
-            name: 'DoubleAgentA',
+            id: process.env.AGENTB,
+            name: 'DoubleAgentB',
             x: 0,
             y: 0,
             score: 0,
@@ -806,7 +805,7 @@ export default class DoubleAgentB extends Agent {
         console.log('PLAY', this.agentRole);
         this.options = this.getBestOptions(this.visibleParcels);
 
-        var bestOption = this.options.shift(); // shift the first element of the array and return it
+        const bestOption = this.options.shift(); // shift the first element of the array and return it
         // console.log('BEST OPTION', bestOption);
 
         console.log('blackListedParcels', this.blackListedParcels);
@@ -836,21 +835,6 @@ export default class DoubleAgentB extends Agent {
             ) {
                 bestOption.deliveryTile.x = this.checkpointTale.x;
                 bestOption.deliveryTile.y = this.checkpointTale.y;
-            }
-            if (true) {
-                //TO DO: da implementare la condizione per cui il pacchetto è raggiungibile
-                for (const option of this.options) {
-                    // itero su tutte le opzioni
-                    if (
-                        this.me.x === option.parcel.x &&
-                        !this.blackListedParcels.has(option.parcel.id)
-                    ) {
-                        bestOption = option;
-                        bestOption.deliveryTile.x = bestOption.parcel.x;
-                        bestOption.deliveryTile.y = bestOption.parcel.y + 2;
-                        console.log('changed bestOption', bestOption);
-                    }
-                }
             }
             var planToReachParcel = await this.generatePlanToParcel(bestOption);
             var fullPlan = planToReachParcel;
