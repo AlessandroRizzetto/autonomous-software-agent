@@ -1,6 +1,6 @@
-import Agent from './Agent.js';
+import Agent from '../Agent.js';
 import { EventEmitter } from 'events';
-import { generatePlanWithPddl } from '../pddl/PDDLParser.js';
+import { generatePlanWithPddl } from '../../pddl/PDDLParser.js';
 import { DeliverooApi } from '@unitn-asa/deliveroo-js-client';
 
 export default class DoubleAgentA extends Agent {

@@ -1,5 +1,5 @@
-import Agent from './Agent.js';
-import { generatePlanWithPddl } from '../pddl/PDDLParser.js';
+import Agent from '../Agent.js';
+import { generatePlanWithPddl } from '../../pddl/PDDLParser.js';
 // import GoPickUp from '../models/GoPickUp.js';
 
 export default class SingleAgent extends Agent {
