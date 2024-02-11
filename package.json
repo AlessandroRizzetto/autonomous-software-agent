@@ -1,35 +1,38 @@
 {
-  "name": "autonomous-software-agent",
-  "version": "1.0.0",
-  "description": "autonomous-software-agent",
-  "main": "index.js",
-  "type": "module",
-  "scripts": {
-    "start": "node ./src/index.js",
-    "update:client": "npm install @unitn-asa/deliveroo-js-client@latest",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/TarasRashkevych99/autonomous-software-agent.git"
-  },
-  "keywords": [
-    "autonomous-system"
-  ],
-  "author": "Taras Rashkevych, Alessandro Rizzetto",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/TarasRashkevych99/autonomous-software-agent/issues"
-  },
-  "homepage": "https://github.com/TarasRashkevych99/autonomous-software-agent#readme",
-  "dependencies": {
-    "@unitn-asa/deliveroo-js-client": "^0.0.34",
-    "@unitn-asa/pddl-client": "^0.0.34",
-    "dotenv": "^16.0.3"
-  },
-  "devDependencies": {
-    "eslint": "^8.36.0",
-    "eslint-config-google": "^0.14.0",
-    "prettier": "2.8.7"
-  }
+    "name": "autonomous-software-agent",
+    "version": "1.0.0",
+    "description": "autonomous-software-agent",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "singleAgent": "node ./src/index.js --agentname=SingleAgent",
+        "doubleAgentA": "node ./src/index.js --agentname=DoubleAgentA",
+        "doubleAgentB": "node ./src/index.js --agentname=DoubleAgentB",
+        "update:client": "npm install @unitn-asa/deliveroo-js-client@latest",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/TarasRashkevych99/autonomous-software-agent.git"
+    },
+    "keywords": [
+        "autonomous-system"
+    ],
+    "author": "Taras Rashkevych, Alessandro Rizzetto",
+    "license": "MIT",
+    "bugs": {
+        "url": "https://github.com/TarasRashkevych99/autonomous-software-agent/issues"
+    },
+    "homepage": "https://github.com/TarasRashkevych99/autonomous-software-agent#readme",
+    "dependencies": {
+        "@unitn-asa/deliveroo-js-client": "^0.0.34",
+        "@unitn-asa/pddl-client": "^0.0.34",
+        "dotenv": "^16.0.3",
+        "yargs": "^17.7.2"
+    },
+    "devDependencies": {
+        "eslint": "^8.36.0",
+        "eslint-config-google": "^0.14.0",
+        "prettier": "2.8.7"
+    }
 }
