@@ -10,4 +10,3 @@ decision-making, to enable the agent to make intelligent decisions and perform e
 
 To make the whole application work download and run the server code that can be found at the following url: [Server Repository](https://github.com/unitn-ASA/Deliveroo.js)
 
-TO DO: andare avanti con le intention_revision (lab5- metà lezione 11/04)
